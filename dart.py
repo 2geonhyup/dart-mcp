@@ -442,13 +442,14 @@ def parse_xbrl_financial_data(xbrl_content: str, items_and_tags: Dict[str, List[
                     # 기존 접두사 로직은 참조용으로만 사용 (실제 패턴 매칭에는 사용하지 않음)
                     # 패턴에서 접두사 부분을 (.): 어떤 한 글자라도 매칭되도록 함
                     pattern_base = f"CFY{fiscal_year}.{pattern_code}_ifrs-full_ConsolidatedAndSeparateFinancialStatementsAxis_ifrs-full_ConsolidatedMember"
-                    pattern_regex = re.compile(pattern_base)
+                    # 패턴의 끝에 $ 추가하여 정확히 일치하는 패턴만 매칭
+                    pattern_regex = re.compile(f"^{pattern_base}$")
                     
                     # 패턴과 일치하는 요소 찾기
                     for elem in elements:
                         context_ref = elem.get('contextRef')
                         
-                        # 정규식으로 패턴 매칭 확인 (접두사 무관)
+                        # 정규식으로 패턴 매칭 확인 (완전 일치)
                         if context_ref and pattern_regex.match(context_ref):
                             unit_ref = elem.get('unitRef')
                             value_text = elem.text
@@ -891,7 +892,7 @@ async def search_detailed_financial_data(
     statement_type: Optional[str] = None,
 ) -> str:
     """
-    회사의 세부적인 재무 정보를 제공하는 도구. 사용자가 원하는 세부 정보에 따라 재무상태표인지 손익계산서인지 현금흐름표인지를 구분.
+    회사의 세부적인 재무 정보를 제공하는 도구.
     
     Args:
         company_name: 회사명 (예: 삼성전자, 네이버 등)
