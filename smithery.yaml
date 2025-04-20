@@ -17,8 +17,8 @@ startCommand:
   # Function that returns the CLI command to launch the MCP on stdio
   commandFunction: |-
     (config) => ({
-      command: "python",
-      args: ["-u", "dart.py"],   // -u: unbuffered stdout
+      command: "uv",
+      args: ["run", "dart.py"],
       env: {
         // 우선 순위: Smithery UI 입력 → 컨테이너 환경변수
         DART_API_KEY: config.DART_API_KEY ?? process.env.DART_API_KEY
