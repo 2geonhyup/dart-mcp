@@ -21,16 +21,6 @@ load_dotenv()
 API_KEY = os.environ.get("DART_API_KEY")  # 환경 변수에서 API 키 로드, 없으면 기본값 사용
 BASE_URL = "https://opendart.fss.or.kr/api"
 
-# KRX API 엔드포인트
-KRX_API_ENDPOINTS = {
-    # 일별매매정보 API
-    "DAILY_TRADE": {
-        "KOSPI": "http://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd",
-        "KOSDAQ": "http://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd", 
-        "KONEX": "http://data-dbg.krx.co.kr/svc/apis/sto/knx_bydd_trd"
-    }
-}
-
 # 보고서 코드
 REPORT_CODE = {
     "사업보고서": "11011",
@@ -137,50 +127,6 @@ chat_guideline = "\n* 제공된 공시정보들은 분기, 반기, 연간이 섞
 
 
 # Helper 함수
-
-# KRX API를 사용하여 주식 정보를 조회하는 함수
-def get_stock_data_by_date(date_str: str, market_types: List[str] = ["KOSPI", "KOSDAQ", "KONEX"]) -> Dict[str, List[Dict[str, str]]]:
-    """
-    지정된 날짜의 주식 매매 정보를 KRX API를 통해 조회하는 함수
-    
-    Args:
-        date_str: 조회할 날짜 (YYYYMMDD 형식)
-        market_types: 조회할 시장 유형 목록 (["KOSPI", "KOSDAQ", "KONEX"])
-        
-    Returns:
-        {시장 유형: [종목 정보 리스트]} 형태의 딕셔너리
-    """
-    result = {}
-    
-    for market in market_types:
-        try:
-            # API 요청 데이터 준비
-            request_data = {"basDd": date_str}
-            
-            # API 호출
-            response = httpx.post(
-                KRX_API_ENDPOINTS["DAILY_TRADE"][market],
-                json=request_data,
-                headers={"Content-Type": "application/json"}
-            )
-            
-            # 응답 확인
-            if response.status_code == 200:
-                data = response.json()
-                # OutBlock_1에서 종목 정보 추출
-                if "OutBlock_1" in data and isinstance(data["OutBlock_1"], list):
-                    result[market] = data["OutBlock_1"]
-                else:
-                    result[market] = []
-            else:
-                print(f"{market} 시장 데이터 요청 실패: 상태 코드 {response.status_code}")
-                result[market] = []
-        
-        except Exception as e:
-            print(f"{market} 시장 데이터 요청 중 오류 발생: {e}")
-            result[market] = []
-    
-    return result
 
 async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str]:
     """
@@ -1230,137 +1176,6 @@ async def get_current_date(
         ctx.info(f"현재 날짜: {formatted_date}")
     
     return formatted_date
-
-
-@mcp.tool()
-async def get_stock_data(
-    company_name: str,
-    ctx: Context,
-    date: Optional[str] = None,
-    market_types: List[str] = ["KOSPI", "KOSDAQ", "KONEX"],
-    show_all_stocks: bool = False
-) -> str:
-    """
-    특정 날짜의 주식 데이터(시가/고가/저가/종가/거래량/시가총액 등)를 조회하는 도구
-    
-    Args:
-        company_name: 조회할 회사 이름, 빈 문자열인 경우 모든 종목 조회
-        ctx: MCP Context 객체
-        date: 조회 날짜(YYYYMMDD 형식, 예: 20230101). None인 경우 오늘 날짜 사용
-        market_types: 조회할 시장 유형 목록 (["KOSPI", "KOSDAQ", "KONEX"] 중 일부 또는 전체)
-        show_all_stocks: True인 경우 모든 종목 데이터 표시, False인 경우 company_name으로 필터링
-        
-    Returns:
-        주식 데이터가 포함된 텍스트
-    """
-    today = datetime.now()
-    
-    # 날짜 미지정 시 오늘 날짜 사용
-    if not date:
-        date = today.strftime("%Y%m%d")
-    
-    # 날짜 유효성 검증
-    try:
-        date_dt = datetime.strptime(date, "%Y%m%d")
-        
-        # 미래 날짜 조회 불가
-        if date_dt > today:
-            return "오류: 미래 날짜의 데이터는 조회할 수 없습니다."
-            
-        # 진행 상황 알림
-        if company_name:
-            ctx.info(f"{date} 기준 {company_name}의 주식 데이터를 조회합니다.")
-        else:
-            ctx.info(f"{date} 기준 모든 주식 데이터를 조회합니다.")
-        
-        # 데이터 조회
-        stock_data = get_stock_data_by_date(date, market_types)
-        
-        # 결과 저장
-        all_data = {}
-        
-        # 종목명으로 필터링
-        for market, stocks in stock_data.items():
-            for stock in stocks:
-                if not company_name or company_name.lower() in stock.get("ISU_NM", "").lower():
-                    # 종목코드를 키로 사용
-                    stock_code = stock.get("ISU_CD", "")
-                    if stock_code:
-                        # 데이터 저장
-                        stock["MARKET"] = market
-                        stock["Date"] = date
-                        all_data[stock_code] = stock
-                        
-                        # 종목명이 정확히 일치하는 경우 우선 선택
-                        if company_name and stock.get("ISU_NM", "") == company_name:
-                            all_data[stock_code] = stock
-        
-        # 결과가 없는 경우
-        if not all_data:
-            if company_name:
-                return f"{date} 기준 '{company_name}' 종목 데이터를 찾을 수 없습니다."
-            else:
-                return f"{date} 기준 주식 데이터를 찾을 수 없습니다."
-        
-        # 종목명이 지정된 경우 정확히 일치하는 종목만 필터링
-        if company_name and not show_all_stocks:
-            exact_matches = {}
-            for code, stock in all_data.items():
-                if stock.get("ISU_NM", "") == company_name:
-                    exact_matches[code] = stock
-            
-            if exact_matches:
-                all_data = exact_matches
-        
-        # 결과 포맷팅
-        result = f"# {date} 주식 데이터\n\n"
-        
-        # 조회된 종목 수가 많은 경우
-        if len(all_data) > 1:
-            result += f"총 {len(all_data)}개 종목이 조회되었습니다.\n\n"
-        
-        # 데이터 출력 제한
-        display_limit = min(100, len(all_data))
-        display_stocks = list(all_data.values())[:display_limit]
-        
-        # 각 종목별 데이터 출력
-        for idx, stock in enumerate(display_stocks):
-            result += f"## {idx+1}. {stock.get('ISU_NM', '-')} ({stock.get('ISU_CD', '-')})\n"
-            result += f"날짜: {date}\n"
-            result += f"시장: {stock.get('MARKET', '-')} / 소속부: {stock.get('SECT_TP_NM', '-')}\n\n"
-            
-            # 주가 정보 테이블
-            result += "### 주가 정보\n"
-            result += "| 항목 | 값 |\n"
-            result += "|------|------|\n"
-            result += f"| 종가 | {stock.get('TDD_CLSPRC', '-')} |\n"
-            result += f"| 대비 | {stock.get('CMPPREVDD_PRC', '-')} |\n"
-            result += f"| 등락률 | {stock.get('FLUC_RT', '-')} |\n"
-            result += f"| 시가 | {stock.get('TDD_OPNPRC', '-')} |\n"
-            result += f"| 고가 | {stock.get('TDD_HGPRC', '-')} |\n"
-            result += f"| 저가 | {stock.get('TDD_LWPRC', '-')} |\n"
-            
-            # 거래 정보 테이블
-            result += "\n### 거래 정보\n"
-            result += "| 항목 | 값 |\n"
-            result += "|------|------|\n"
-            result += f"| 거래량 | {stock.get('ACC_TRDVOL', '-')} |\n"
-            result += f"| 거래대금 | {stock.get('ACC_TRDVAL', '-')} |\n"
-            result += f"| 시가총액 | {stock.get('MKTCAP', '-')} |\n"
-            result += f"| 상장주식수 | {stock.get('LIST_SHRS', '-')} |\n"
-            
-            # 구분선 추가
-            if idx < len(display_stocks) - 1:
-                result += "\n" + "-" * 50 + "\n\n"
-        
-        # 조회 제한 안내
-        if len(all_data) > display_limit:
-            result += f"\n... 외 {len(all_data) - display_limit}개 종목이 더 있습니다. (전체 {len(all_data)}개 중 {display_limit}개 표시)\n"
-        
-        return result
-        
-    except ValueError:
-        return "오류: 날짜 형식이 올바르지 않습니다. YYYYMMDD 형식으로 입력해주세요."
 
 
 # 서버 실행 코드
