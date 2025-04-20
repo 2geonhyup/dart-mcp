@@ -1,0 +1,16 @@
+# Smithery.ai configuration
+startCommand:
+  type: stdio          # MCP가 stdin/stdout으로 통신
+configSchema: {}        # 별도의 사용자 설정이 없으면 빈 스키마
+commandFunction: |-
+  (config) => ({
+    command: "python",
+    args: [
+      "dart.py"        # FastMCP 엔트리포인트
+    ],
+    env: {
+      // Smithery가 전달한 사용자 설정값을 우선 사용하고,
+      // 없으면 컨테이너/호스트의 환경변수를 그대로 이용
+      DART_API_KEY:   config.DART_API_KEY ?? process.env.DART_API_KEY
+    }
+  })
