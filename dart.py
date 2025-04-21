@@ -124,7 +124,7 @@ chat_guideline = "\n* 제공된 공시정보들은 분기, 반기, 연간이 섞
 
 # Helper 함수
 
-async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str]:
+async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str, str]:
     """
     회사명으로 회사의 고유번호를 검색하는 함수
     
@@ -132,29 +132,51 @@ async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str]:
         corp_name: 검색할 회사명
         
     Returns:
-        (고유번호, 기업이름) 튜플, 찾지 못한 경우 ("", "")
+        (고유번호, 기업이름, 디버그로그) 튜플, 찾지 못한 경우 ("", 오류메시지, 디버그로그)
     """
+    # 디버그 로그 초기화
+    debug_logs = ["[DEBUG] get_corp_code_by_name 함수 시작"]
+    debug_logs.append(f"[DEBUG] 검색할 회사명: {corp_name}")
+    
     url = f"{BASE_URL}/corpCode.xml?crtfc_key={API_KEY}"
+    debug_logs.append(f"[DEBUG] API URL: {url}")
+    debug_logs.append(f"[DEBUG] API KEY 마스킹: {API_KEY[:4]}...{API_KEY[-4:] if len(API_KEY) > 8 else '짧은키'}")
     
     try:
+        debug_logs.append("[DEBUG] httpx.AsyncClient 생성 시작")
         async with httpx.AsyncClient() as client:
+            debug_logs.append("[DEBUG] httpx.AsyncClient 생성 완료")
             try:
+                debug_logs.append("[DEBUG] API 요청 시작")
                 response = await client.get(url)
+                debug_logs.append(f"[DEBUG] API 응답 수신: 상태 코드 {response.status_code}")
                 
                 if response.status_code != 200:
-                    return ("", f"API 요청 실패: HTTP 상태 코드 {response.status_code}")
+                    debug_logs.append(f"[DEBUG] API 요청 실패: HTTP 상태 코드 {response.status_code}")
+                    return ("", f"API 요청 실패: HTTP 상태 코드 {response.status_code}", "\n".join(debug_logs))
                 
                 try:
+                    debug_logs.append("[DEBUG] ZIP 파일 처리 시작")
+                    debug_logs.append(f"[DEBUG] 응답 콘텐츠 길이: {len(response.content)} 바이트")
                     with zipfile.ZipFile(BytesIO(response.content)) as zip_file:
+                        debug_logs.append(f"[DEBUG] ZIP 파일 처리 완료, 파일 목록: {zip_file.namelist()}")
                         try:
+                            debug_logs.append("[DEBUG] CORPCODE.xml 파일 열기 시작")
                             with zip_file.open('CORPCODE.xml') as xml_file:
+                                debug_logs.append("[DEBUG] CORPCODE.xml 파일 열기 완료")
                                 try:
+                                    debug_logs.append("[DEBUG] XML 파싱 시작")
                                     tree = ET.parse(xml_file)
                                     root = tree.getroot()
+                                    debug_logs.append(f"[DEBUG] XML 파싱 완료, 루트 태그: {root.tag}")
                                     
                                     # 검색어를 포함하는 모든 회사 찾기
+                                    debug_logs.append("[DEBUG] 회사 검색 시작")
                                     matches = []
-                                    for company in root.findall('.//list'):
+                                    list_elements = root.findall('.//list')
+                                    debug_logs.append(f"[DEBUG] 전체 회사 수: {len(list_elements)}")
+                                    
+                                    for company in list_elements:
                                         name = company.find('corp_name').text
                                         stock_code = company.find('stock_code').text
                                         
@@ -173,29 +195,41 @@ async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str]:
                                             code = company.find('corp_code').text
                                             matches.append((name, code, score))
                                     
+                                    debug_logs.append(f"[DEBUG] 검색된 회사 수: {len(matches)}")
+                                    
                                     # 일치하는 회사가 없는 경우
                                     if not matches:
-                                        return ("", f"'{corp_name}' 회사를 찾을 수 없습니다.")
+                                        debug_logs.append(f"[DEBUG] '{corp_name}' 회사를 찾을 수 없음")
+                                        return ("", f"'{corp_name}' 회사를 찾을 수 없습니다.", "\n".join(debug_logs))
                                     
                                     # 일치도 점수가 가장 낮은 (가장 일치하는) 회사 반환
                                     matches.sort(key=lambda x: x[2])
                                     matched_name = matches[0][0]
                                     matched_code = matches[0][1]
-                                    return (matched_code, matched_name)
+                                    debug_logs.append(f"[DEBUG] 가장 일치하는 회사: {matched_name}, 코드: {matched_code}")
+                                    return (matched_code, matched_name, "\n".join(debug_logs))
                                 except ET.ParseError as e:
-                                    return ("", f"XML 파싱 오류: {str(e)}")
+                                    debug_logs.append(f"[DEBUG] XML 파싱 오류: {str(e)}")
+                                    return ("", f"XML 파싱 오류: {str(e)}", "\n".join(debug_logs))
                         except Exception as e:
-                            return ("", f"ZIP 파일 내부 파일 접근 오류: {str(e)}")
+                            debug_logs.append(f"[DEBUG] ZIP 파일 내부 파일 접근 오류: {str(e)}")
+                            return ("", f"ZIP 파일 내부 파일 접근 오류: {str(e)}", "\n".join(debug_logs))
                 except zipfile.BadZipFile:
-                    return ("", "다운로드한 파일이 유효한 ZIP 파일이 아닙니다.")
+                    debug_logs.append("[DEBUG] 다운로드한 파일이 유효한 ZIP 파일이 아님")
+                    debug_logs.append(f"[DEBUG] 응답 콘텐츠 미리보기: {response.content[:100].hex()}")
+                    return ("", "다운로드한 파일이 유효한 ZIP 파일이 아닙니다.", "\n".join(debug_logs))
                 except Exception as e:
-                    return ("", f"ZIP 파일 처리 중 오류 발생: {str(e)}")
+                    debug_logs.append(f"[DEBUG] ZIP 파일 처리 중 오류 발생: {str(e)}")
+                    return ("", f"ZIP 파일 처리 중 오류 발생: {str(e)}", "\n".join(debug_logs))
             except httpx.RequestError as e:
-                return ("", f"API 요청 중 네트워크 오류 발생: {str(e)}")
+                debug_logs.append(f"[DEBUG] API 요청 중 네트워크 오류 발생: {str(e)}")
+                return ("", f"API 요청 중 네트워크 오류 발생: {str(e)}", "\n".join(debug_logs))
     except Exception as e:
-        return ("", f"회사 코드 조회 중 예상치 못한 오류 발생: {str(e)}")
+        debug_logs.append(f"[DEBUG] 회사 코드 조회 중 예상치 못한 오류 발생: {str(e)}")
+        return ("", f"회사 코드 조회 중 예상치 못한 오류 발생: {str(e)}", "\n".join(debug_logs))
     
-    return ("", "알 수 없는 오류로 회사 정보를 찾을 수 없습니다.")
+    debug_logs.append("[DEBUG] 알 수 없는 이유로 함수가 여기까지 실행됨")
+    return ("", "알 수 없는 오류로 회사 정보를 찾을 수 없습니다.", "\n".join(debug_logs))
 
 
 async def get_disclosure_list(corp_code: str, start_date: str, end_date: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
@@ -781,22 +815,22 @@ async def search_disclosure(
             end_date = adjusted_end_date
         
         # 회사 코드 조회
-        corp_code, matched_name = await get_corp_code_by_name(company_name)
+        corp_code, matched_name, debug_logs = await get_corp_code_by_name(company_name)
         if not corp_code:
-            return f"회사 검색 오류: {matched_name}"
+            return f"회사 검색 오류: {matched_name}\n\n## 디버그 로그\n{debug_logs}"
         
         ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
         
         # 공시 목록 조회
         disclosures, error_msg = await get_disclosure_list(corp_code, start_date, end_date)
         if error_msg:
-            return f"공시 목록 조회 오류: {error_msg}"
+            return f"공시 목록 조회 오류: {error_msg}\n\n## 디버그 로그\n{debug_logs}"
             
         if not disclosures:
             date_range_msg = f"{start_date}부터 {end_date}까지"
             if was_adjusted:
                 date_range_msg += f" (원래 요청: {start_date}~{original_end_date}, 공시 제출 기간 고려하여 확장)"
-            return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다."
+            return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다.\n\n## 디버그 로그\n{debug_logs}"
         
         ctx.info(f"{len(disclosures)}개의 정기공시를 찾았습니다. XBRL 데이터 조회 및 분석을 시도합니다.")
 
@@ -818,7 +852,7 @@ async def search_disclosure(
             items_to_extract = {item: tags for item, tags in all_items_and_tags.items() if item in requested_items}
             if not items_to_extract:
                  unsupported_items = [item for item in requested_items if item not in all_items_and_tags]
-                 return f"요청하신 항목 중 지원되지 않는 항목이 있습니다: {', '.join(unsupported_items)}. 지원 항목: {', '.join(all_items_and_tags.keys())}"
+                 return f"요청하신 항목 중 지원되지 않는 항목이 있습니다: {', '.join(unsupported_items)}. 지원 항목: {', '.join(all_items_and_tags.keys())}\n\n## 디버그 로그\n{debug_logs}"
         else:
             items_to_extract = all_items_and_tags
         
@@ -925,6 +959,9 @@ async def search_disclosure(
         if relevant_reports_found > 0 and requested_items:
              result += f"\n※ 요청하신 항목({', '.join(requested_items)}) 관련 정보가 있는 {relevant_reports_found}개의 보고서를 표시했습니다.\n"
 
+        # 디버그 로그 추가
+        result += f"\n\n## 회사 검색 디버그 로그\n{debug_logs}"
+
     except Exception as e:
         return f"재무 정보 검색 중 예상치 못한 오류가 발생했습니다: {str(e)}\n\n{traceback.format_exc()}"
 
@@ -980,22 +1017,22 @@ async def search_detailed_financial_data(
             end_date = adjusted_end_date
         
         # 회사 코드 조회
-        corp_code, matched_name = await get_corp_code_by_name(company_name)
+        corp_code, matched_name, debug_logs = await get_corp_code_by_name(company_name)
         if not corp_code:
-            return f"회사 검색 오류: {matched_name}"
+            return f"회사 검색 오류: {matched_name}\n\n## 디버그 로그\n{debug_logs}"
         
         ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
         
         # 공시 목록 조회
         disclosures, error_msg = await get_disclosure_list(corp_code, start_date, end_date)
         if error_msg:
-            return error_msg
+            return f"공시 목록 조회 오류: {error_msg}\n\n## 디버그 로그\n{debug_logs}"
             
         if not disclosures:
             date_range_msg = f"{start_date}부터 {end_date}까지"
             if was_adjusted:
                 date_range_msg += f" (원래 요청: {start_date}~{original_end_date}, 공시 제출 기간 고려하여 확장)"
-            return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다."
+            return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다.\n\n## 디버그 로그\n{debug_logs}"
         
         ctx.info(f"{len(disclosures)}개의 정기공시를 찾았습니다. XBRL 데이터 조회 및 분석을 시도합니다.")
 
@@ -1038,7 +1075,7 @@ async def search_detailed_financial_data(
                     ctx.warning(f"XBRL 데이터 조회 오류 ({report_name}): {error_summary}")
             except Exception as e:
                 api_errors.append(f"{report_name if 'report_name' in locals() else '알 수 없는 보고서'}: {str(e)}")
-                ctx.error(f"공시 데이터 처리 중 예상치 못한 오류 발생: {e}")
+                ctx.error(f"공시 처리 중 예상치 못한 오류 발생: {e}")
                 traceback.print_exc()
         
         # 각 재무제표 유형별 처리
@@ -1116,6 +1153,9 @@ async def search_detailed_financial_data(
         
         if len(processed_disclosures) == 0:
             result += "※ 모든 공시에서 XBRL 데이터를 추출하는데 실패했습니다. 오류 메시지를 확인해주세요.\n"
+            
+        # 디버그 로그 추가
+        result += f"\n\n## 회사 검색 디버그 로그\n{debug_logs}"
         
     except Exception as e:
         return f"세부 재무 정보 검색 중 예상치 못한 오류가 발생했습니다: {str(e)}\n\n{traceback.format_exc()}"
@@ -1178,17 +1218,23 @@ async def search_business_information(
             end_date = adjusted_end_date
         
         # 회사 코드 조회
-        corp_code, matched_name = await get_corp_code_by_name(company_name)
+        corp_code, matched_name, debug_logs = await get_corp_code_by_name(company_name)
         if not corp_code:
-            return f"회사 검색 오류: {matched_name}"
+            return f"회사 검색 오류: {matched_name}\n\n## 디버그 로그\n{debug_logs}"
         
         ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
         
         # 공시 목록 조회
         disclosures, error_msg = await get_disclosure_list(corp_code, start_date, end_date)
         if error_msg:
-            return error_msg
+            return f"공시 목록 조회 오류: {error_msg}\n\n## 디버그 로그\n{debug_logs}"
             
+        if not disclosures:
+            date_range_msg = f"{start_date}부터 {end_date}까지"
+            if was_adjusted:
+                date_range_msg += f" (원래 요청: {start_date}~{original_end_date}, 공시 제출 기간 고려하여 확장)"
+            return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다.\n\n## 디버그 로그\n{debug_logs}"
+        
         ctx.info(f"{len(disclosures)}개의 정기공시를 찾았습니다. 적절한 공시를 선택하여 정보를 추출합니다.")
         
         # 사업정보를 포함할 가능성이 높은 정기보고서를 우선순위에 따라 필터링
@@ -1213,7 +1259,7 @@ async def search_business_information(
             selected_disclosure = disclosures[0]
         
         if not selected_disclosure:
-            return f"'{matched_name}'의 적절한 공시를 찾을 수 없습니다."
+            return f"'{matched_name}'의 적절한 공시를 찾을 수 없습니다.\n\n## 디버그 로그\n{debug_logs}"
         
         # 선택된 공시 정보
         report_name = selected_disclosure.get('report_nm', '제목 없음')
@@ -1236,6 +1282,10 @@ async def search_business_information(
                 result += "1. 해당 공시에 요청하신 정보가 포함되어 있지 않을 수 있습니다.\n"
                 result += "2. DART API 호출 중 오류가 발생했을 수 있습니다.\n"
                 result += "3. 섹션 추출 과정에서 패턴 매칭에 실패했을 수 있습니다.\n"
+                
+                # 디버그 로그 추가
+                result += f"\n\n## 회사 검색 디버그 로그\n{debug_logs}"
+                
                 return result
             else:
                 # 결과 포맷팅
@@ -1246,6 +1296,9 @@ async def search_business_information(
                 max_length = 5000  # 적절한 최대 길이 설정
                 if len(result) > max_length:
                     result = result[:max_length] + f"\n\n... (이하 생략, 총 {len(result)} 자)"
+                
+                # 디버그 로그 추가
+                result += f"\n\n## 회사 검색 디버그 로그\n{debug_logs}"
         except Exception as e:
             ctx.error(f"섹션 추출 중 예상치 못한 오류 발생: {e}")
             result = f"# {matched_name} - {information_type}\n\n"
@@ -1255,35 +1308,10 @@ async def search_business_information(
             result += "1. 섹션 추출 과정에서 예외가 발생했습니다.\n"
             result += "2. 오류 상세 정보: " + traceback.format_exc().replace('\n', '\n   ') + "\n"
             
+            # 디버그 로그 추가
+            result += f"\n\n## 회사 검색 디버그 로그\n{debug_logs}"
+            
     except Exception as e:
         return f"사업 정보 검색 중 예상치 못한 오류가 발생했습니다: {str(e)}\n\n{traceback.format_exc()}"
 
     return result
-
-
-@mcp.tool()
-async def get_current_date(
-    ctx: Context = None
-) -> str:
-    """
-    현재 날짜를 YYYYMMDD 형식으로 반환하는 도구
-    
-    Args:
-        ctx: MCP Context 객체 (선택 사항)
-        
-    Returns:
-        YYYYMMDD 형식의 현재 날짜 문자열
-    """
-    # 현재 날짜를 YYYYMMDD 형식으로 포맷팅
-    formatted_date = datetime.now().strftime("%Y%m%d")
-    
-    # 컨텍스트가 제공된 경우 로그 출력
-    if ctx:
-        ctx.info(f"현재 날짜: {formatted_date}")
-    
-    return formatted_date
-
-
-# 서버 실행 코드
-if __name__ == "__main__":
-    mcp.run(transport='stdio')
