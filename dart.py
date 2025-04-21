@@ -929,7 +929,6 @@ async def search_disclosure(
         return f"재무 정보 검색 중 예상치 못한 오류가 발생했습니다: {str(e)}\n\n{traceback.format_exc()}"
 
     result += chat_guideline
-    result = "ㅎㅇ"
     return result.strip()
 
 
