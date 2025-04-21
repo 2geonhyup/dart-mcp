@@ -768,6 +768,7 @@ async def search_disclosure(
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(url)
+                return "hi"
                 
                 if response.status_code != 200:
                     return ("", f"API 요청 실패: HTTP 상태 코드 {response.status_code}")
