@@ -7,6 +7,14 @@ DART MCP 서버는 금융감독원의 전자공시시스템(DART) API를 활용�
 
 ## 설치 방법
 
+### Installing via Smithery
+
+To install dart-mcp for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@2geonhyup/dart-mcp):
+
+```bash
+npx -y @smithery/cli install @2geonhyup/dart-mcp --client claude
+```
+
 ### 필수 요구사항
 - Python 3.10 이상
 - DART API 키 (금융감독원 OPEN DART에서 발급 가능)
