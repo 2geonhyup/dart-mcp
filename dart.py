@@ -780,6 +780,7 @@ async def search_disclosure(
             ctx.info(f"공시 제출 기간을 고려하여 검색 종료일을 {original_end_date}에서 {adjusted_end_date}로 자동 조정했습니다.")
             end_date = adjusted_end_date
         
+        return "hi"
         # 회사 코드 조회
         corp_code, matched_name = await get_corp_code_by_name(company_name)
         if not corp_code:
