@@ -195,7 +195,6 @@ async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str]:
     except Exception as e:
         return ("", f"회사 코드 조회 중 예상치 못한 오류 발생: {str(e)}")
     
-    return ("", "알 수 없는 오류로 회사 정보를 찾을 수 없습니다.")
 
 
 async def get_disclosure_list(corp_code: str, start_date: str, end_date: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
@@ -762,6 +761,67 @@ async def search_disclosure(
         검색된 각 공시의 주요 재무 정보 요약 텍스트 (요청 항목 관련 데이터가 있는 경우만)
     """
     # 결과 문자열 초기화
+
+    url = f"{BASE_URL}/corpCode.xml?crtfc_key={API_KEY}"
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(url)
+                
+                if response.status_code != 200:
+                    return ("", f"API 요청 실패: HTTP 상태 코드 {response.status_code}")
+                
+                try:
+                    with zipfile.ZipFile(BytesIO(response.content)) as zip_file:
+                        try:
+                            with zip_file.open('CORPCODE.xml') as xml_file:
+                                try:
+                                    tree = ET.parse(xml_file)
+                                    root = tree.getroot()
+                                    
+                                    # 검색어를 포함하는 모든 회사 찾기
+                                    matches = []
+                                    for company in root.findall('.//list'):
+                                        name = company.find('corp_name').text
+                                        stock_code = company.find('stock_code').text
+                                        
+                                        # stock_code가 비어있거나 공백만 있는 경우 건너뛰기
+                                        if not stock_code or stock_code.strip() == "":
+                                            continue
+                                            
+                                        if name and company_name in name:
+                                            # 일치도 점수 계산 (낮을수록 더 정확히 일치)
+                                            score = 0
+                                            if name != company_name:
+                                                score += abs(len(name) - len(company_name))
+                                                if not name.startswith(company_name):
+                                                    score += 10
+                                            
+                                            code = company.find('corp_code').text
+                                            matches.append((name, code, score))
+                                    
+                                    # 일치하는 회사가 없는 경우
+                                    if not matches:
+                                        return ("", f"'{company_name}' 회사를 찾을 수 없습니다.")
+                                    
+                                    # 일치도 점수가 가장 낮은 (가장 일치하는) 회사 반환
+                                    matches.sort(key=lambda x: x[2])
+                                    matched_name = matches[0][0]
+                                    matched_code = matches[0][1]
+                                    return (matched_code, matched_name)
+                                except ET.ParseError as e:
+                                    return ("", f"XML 파싱 오류: {str(e)}")
+                        except Exception as e:
+                            return ("", f"ZIP 파일 내부 파일 접근 오류: {str(e)}")
+                except zipfile.BadZipFile:
+                    return ("", "다운로드한 파일이 유효한 ZIP 파일이 아닙니다.")
+                except Exception as e:
+                    return ("", f"ZIP 파일 처리 중 오류 발생: {str(e)}")
+            except httpx.RequestError as e:
+                return ("", f"API 요청 중 네트워크 오류 발생: {str(e)}")
+    except Exception as e:
+        return ("", f"회사 코드 조회 중 예상치 못한 오류 발생: {str(e)}")
     result = ""
     
     try:
@@ -780,7 +840,7 @@ async def search_disclosure(
             ctx.info(f"공시 제출 기간을 고려하여 검색 종료일을 {original_end_date}에서 {adjusted_end_date}로 자동 조정했습니다.")
             end_date = adjusted_end_date
         
-        return "hi"
+        
         # 회사 코드 조회
         corp_code, matched_name = await get_corp_code_by_name(company_name)
         if not corp_code:
