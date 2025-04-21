@@ -2,16 +2,12 @@ import httpx
 from typing import Any, Dict, List, Optional, Tuple, Set
 from mcp.server.fastmcp import FastMCP, Context
 import os
-import tempfile
 import zipfile
 import xml.etree.ElementTree as ET
 from io import BytesIO, StringIO
 import re
-import html
 import traceback
 from datetime import datetime, timedelta
-import json
-import requests
 from dotenv import load_dotenv
 
 
