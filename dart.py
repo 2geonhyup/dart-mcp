@@ -137,7 +137,7 @@ async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str]:
     url = f"{BASE_URL}/corpCode.xml?crtfc_key={API_KEY}"
     
     try:
-        async with httpx.AsyncClient(http2=False) as client:
+        async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(url)
                 
@@ -214,7 +214,7 @@ async def get_disclosure_list(corp_code: str, start_date: str, end_date: str) ->
     url = f"{BASE_URL}/list.json?crtfc_key={API_KEY}&corp_code={corp_code}&bgn_de={start_date}&end_de={end_date}&pblntf_ty=A&page_count=100"
     
     try:
-        async with httpx.AsyncClient(http2=False) as client:
+        async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(url)
                 
@@ -254,7 +254,7 @@ async def get_financial_statement_xbrl(rcept_no: str, reprt_code: str) -> str:
     url = f"{BASE_URL}/fnlttXbrl.xml?crtfc_key={API_KEY}&rcept_no={rcept_no}&reprt_code={reprt_code}"
 
     try:
-        async with httpx.AsyncClient(timeout=30.0, http2=False) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url)
 
             if response.status_code != 200:
@@ -674,7 +674,7 @@ async def get_original_document(rcept_no: str) -> Tuple[str, Optional[bytes]]:
     url = f"{BASE_URL}/document.xml?crtfc_key={API_KEY}&rcept_no={rcept_no}"
     
     try:
-        async with httpx.AsyncClient(timeout=30.0, http2=False) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url)
             
             if response.status_code != 200:
@@ -1282,6 +1282,161 @@ async def get_current_date(
         ctx.info(f"현재 날짜: {formatted_date}")
     
     return formatted_date
+
+
+@mcp.tool()
+async def test_api_request(
+    url: str,
+    ctx: Context,
+    method: str = "GET",
+    timeout: int = 30,
+    headers: Optional[Dict[str, str]] = None,
+) -> str:
+    """
+    테스트용 API 요청 도구 - 다양한 API 엔드포인트에 대한 요청을 테스트합니다.
+    
+    Args:
+        url: 요청할 API URL
+        ctx: MCP Context 객체
+        method: HTTP 메서드 (GET, POST 등, 기본값 GET)
+        timeout: 요청 타임아웃 (초, 기본값 30초)
+        headers: 요청 헤더 (선택사항)
+        
+    Returns:
+        API 응답 결과 및 디버깅 정보
+    """
+    result = {}
+    start_time = datetime.now()
+    
+    try:
+        ctx.info(f"테스트 API 요청 시작: {method} {url}")
+        ctx.info(f"타임아웃 설정: {timeout}초")
+        
+        # 요청에 사용될 DNS 정보 수집 (디버깅용)
+        import socket
+        try:
+            domain = url.split("//")[-1].split("/")[0].split(":")[0]
+            ip_info = socket.gethostbyname_ex(domain)
+            result["dns_info"] = {
+                "hostname": ip_info[0],
+                "aliases": ip_info[1],
+                "ip_addresses": ip_info[2]
+            }
+            ctx.info(f"DNS 정보: {domain} -> {ip_info[2]}")
+        except Exception as e:
+            result["dns_error"] = str(e)
+            ctx.warning(f"DNS 정보 조회 중 오류: {e}")
+        
+        # 프록시 환경변수 확인
+        proxy_info = {
+            "http_proxy": os.environ.get("http_proxy"),
+            "https_proxy": os.environ.get("https_proxy"),
+            "no_proxy": os.environ.get("no_proxy")
+        }
+        result["proxy_settings"] = proxy_info
+        
+        # 비동기 HTTP 요청 수행
+        client_settings = {"timeout": timeout}
+        headers = headers or {}
+        
+        async with httpx.AsyncClient(**client_settings) as client:
+            # 요청 전 시간 기록
+            before_request = datetime.now()
+            
+            if method.upper() == "GET":
+                response = await client.get(url, headers=headers)
+            elif method.upper() == "POST":
+                response = await client.post(url, headers=headers)
+            else:
+                return f"지원하지 않는 HTTP 메서드: {method}"
+            
+            # 요청 후 시간 기록
+            after_request = datetime.now()
+            request_duration = (after_request - before_request).total_seconds()
+            
+            # 응답 정보 수집
+            result["status_code"] = response.status_code
+            result["elapsed_time"] = request_duration
+            result["headers"] = dict(response.headers)
+            
+            # 응답 본문 (크기에 따라 부분 또는 전체)
+            content = response.text
+            if len(content) > 1000:
+                result["content_preview"] = content[:1000] + "... (truncated)"
+                result["content_length"] = len(content)
+            else:
+                result["content"] = content
+            
+            ctx.info(f"API 응답 받음: {response.status_code} ({request_duration:.2f}초)")
+        
+    except httpx.TimeoutException as e:
+        result["error"] = f"요청 타임아웃: {str(e)}"
+        ctx.error(f"API 요청 타임아웃: {e}")
+    except httpx.ConnectError as e:
+        result["error"] = f"연결 오류: {str(e)}"
+        ctx.error(f"API 연결 오류: {e}")
+    except httpx.RequestError as e:
+        result["error"] = f"요청 오류: {str(e)}"
+        ctx.error(f"API 요청 오류: {e}")
+    except Exception as e:
+        result["error"] = f"예상치 못한 오류: {str(e)}"
+        ctx.error(f"API 요청 중 예상치 못한 오류: {e}")
+        result["traceback"] = traceback.format_exc()
+    
+    # 전체 소요 시간
+    total_duration = (datetime.now() - start_time).total_seconds()
+    result["total_time"] = total_duration
+    
+    # 결과를 가독성 있는 형태로 포맷팅
+    formatted_result = "# API 요청 테스트 결과\n\n"
+    formatted_result += f"## 요청 정보\n"
+    formatted_result += f"- URL: `{url}`\n"
+    formatted_result += f"- 메서드: {method}\n"
+    formatted_result += f"- 타임아웃: {timeout}초\n"
+    
+    if "error" in result:
+        formatted_result += f"\n## 오류 발생\n"
+        formatted_result += f"- {result['error']}\n"
+        if "traceback" in result:
+            formatted_result += f"\n```python\n{result['traceback']}\n```\n"
+    else:
+        formatted_result += f"\n## 응답 정보\n"
+        formatted_result += f"- 상태 코드: {result.get('status_code')}\n"
+        formatted_result += f"- 응답 시간: {result.get('elapsed_time', 0):.2f}초\n"
+        formatted_result += f"- 전체 소요 시간: {result.get('total_time', 0):.2f}초\n"
+        
+        formatted_result += f"\n## 응답 헤더\n"
+        for key, value in result.get('headers', {}).items():
+            formatted_result += f"- {key}: {value}\n"
+        
+        if "content" in result:
+            formatted_result += f"\n## 응답 본문\n"
+            formatted_result += f"```\n{result['content']}\n```\n"
+        elif "content_preview" in result:
+            formatted_result += f"\n## 응답 본문 (일부)\n"
+            formatted_result += f"- 전체 길이: {result['content_length']} 문자\n"
+            formatted_result += f"```\n{result['content_preview']}\n```\n"
+    
+    formatted_result += f"\n## 네트워크 진단 정보\n"
+    
+    if "dns_info" in result:
+        formatted_result += f"### DNS 정보\n"
+        formatted_result += f"- 호스트명: {result['dns_info']['hostname']}\n"
+        formatted_result += f"- IP 주소: {', '.join(result['dns_info']['ip_addresses'])}\n"
+    elif "dns_error" in result:
+        formatted_result += f"### DNS 조회 오류\n"
+        formatted_result += f"- {result['dns_error']}\n"
+    
+    formatted_result += f"\n### 프록시 설정\n"
+    proxy_settings = result.get('proxy_settings', {})
+    if any(proxy_settings.values()):
+        for key, value in proxy_settings.items():
+            if value:
+                formatted_result += f"- {key}: {value}\n"
+    else:
+        formatted_result += "- 설정된 프록시 없음\n"
+    
+    return formatted_result
 
 
 # 서버 실행 코드
