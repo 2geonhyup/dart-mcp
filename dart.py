@@ -136,52 +136,69 @@ async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str]:
     """
     url = f"{BASE_URL}/corpCode.xml?crtfc_key={API_KEY}"
     
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url)
-        
-        if response.status_code != 200:
-            return ("", "")
-        
-        with zipfile.ZipFile(BytesIO(response.content)) as zip_file:
-            with zip_file.open('CORPCODE.xml') as xml_file:
-                tree = ET.parse(xml_file)
-                root = tree.getroot()
+    try:
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(url)
                 
-                # 검색어를 포함하는 모든 회사 찾기
-                matches = []
-                for company in root.findall('.//list'):
-                    name = company.find('corp_name').text
-                    stock_code = company.find('stock_code').text
-                    
-                    # stock_code가 비어있거나 공백만 있는 경우 건너뛰기
-                    if not stock_code or stock_code.strip() == "":
-                        continue
-                        
-                    if name and corp_name in name:
-                        # 일치도 점수 계산 (낮을수록 더 정확히 일치)
-                        score = 0
-                        if name != corp_name:
-                            score += abs(len(name) - len(corp_name))
-                            if not name.startswith(corp_name):
-                                score += 10
-                        
-                        code = company.find('corp_code').text
-                        matches.append((name, code, score))
+                if response.status_code != 200:
+                    return ("", f"API 요청 실패: HTTP 상태 코드 {response.status_code}")
                 
-                # 일치하는 회사가 없는 경우
-                if not matches:
-                    return ("", "")
-                
-                # 일치도 점수가 가장 낮은 (가장 일치하는) 회사 반환
-                matches.sort(key=lambda x: x[2])
-                matched_name = matches[0][0]
-                matched_code = matches[0][1]
-                return (matched_code, matched_name)
+                try:
+                    with zipfile.ZipFile(BytesIO(response.content)) as zip_file:
+                        try:
+                            with zip_file.open('CORPCODE.xml') as xml_file:
+                                try:
+                                    tree = ET.parse(xml_file)
+                                    root = tree.getroot()
+                                    
+                                    # 검색어를 포함하는 모든 회사 찾기
+                                    matches = []
+                                    for company in root.findall('.//list'):
+                                        name = company.find('corp_name').text
+                                        stock_code = company.find('stock_code').text
+                                        
+                                        # stock_code가 비어있거나 공백만 있는 경우 건너뛰기
+                                        if not stock_code or stock_code.strip() == "":
+                                            continue
+                                            
+                                        if name and corp_name in name:
+                                            # 일치도 점수 계산 (낮을수록 더 정확히 일치)
+                                            score = 0
+                                            if name != corp_name:
+                                                score += abs(len(name) - len(corp_name))
+                                                if not name.startswith(corp_name):
+                                                    score += 10
+                                            
+                                            code = company.find('corp_code').text
+                                            matches.append((name, code, score))
+                                    
+                                    # 일치하는 회사가 없는 경우
+                                    if not matches:
+                                        return ("", f"'{corp_name}' 회사를 찾을 수 없습니다.")
+                                    
+                                    # 일치도 점수가 가장 낮은 (가장 일치하는) 회사 반환
+                                    matches.sort(key=lambda x: x[2])
+                                    matched_name = matches[0][0]
+                                    matched_code = matches[0][1]
+                                    return (matched_code, matched_name)
+                                except ET.ParseError as e:
+                                    return ("", f"XML 파싱 오류: {str(e)}")
+                        except Exception as e:
+                            return ("", f"ZIP 파일 내부 파일 접근 오류: {str(e)}")
+                except zipfile.BadZipFile:
+                    return ("", "다운로드한 파일이 유효한 ZIP 파일이 아닙니다.")
+                except Exception as e:
+                    return ("", f"ZIP 파일 처리 중 오류 발생: {str(e)}")
+            except httpx.RequestError as e:
+                return ("", f"API 요청 중 네트워크 오류 발생: {str(e)}")
+    except Exception as e:
+        return ("", f"회사 코드 조회 중 예상치 못한 오류 발생: {str(e)}")
     
-    return ("", "")
+    return ("", "알 수 없는 오류로 회사 정보를 찾을 수 없습니다.")
 
 
-async def get_disclosure_list(corp_code: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+async def get_disclosure_list(corp_code: str, start_date: str, end_date: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     """
     기업의 정기공시 목록을 조회하는 함수
     
@@ -191,23 +208,36 @@ async def get_disclosure_list(corp_code: str, start_date: str, end_date: str) ->
         end_date: 종료일(YYYYMMDD)
     
     Returns:
-        공시 목록 리스트, 실패 시 빈 리스트
+        (공시 목록 리스트, 오류 메시지) 튜플. 성공 시 (목록, None), 실패 시 (빈 리스트, 오류 메시지)
     """
     # 정기공시(A) 유형만 조회
     url = f"{BASE_URL}/list.json?crtfc_key={API_KEY}&corp_code={corp_code}&bgn_de={start_date}&end_de={end_date}&pblntf_ty=A&page_count=100"
     
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url)
-        
-        if response.status_code != 200:
-            return []
-        
-        result = response.json()
-        
-        if result.get('status') != '000':
-            return []
-        
-        return result.get('list', [])
+    try:
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(url)
+                
+                if response.status_code != 200:
+                    return [], f"API 요청 실패: HTTP 상태 코드 {response.status_code}"
+                
+                try:
+                    result = response.json()
+                    
+                    if result.get('status') != '000':
+                        status = result.get('status', '알 수 없음')
+                        msg = result.get('message', '알 수 없는 오류')
+                        return [], f"DART API 오류: {status} - {msg}"
+                    
+                    return result.get('list', []), None
+                except Exception as e:
+                    return [], f"응답 JSON 파싱 오류: {str(e)}"
+            except httpx.RequestError as e:
+                return [], f"API 요청 중 네트워크 오류 발생: {str(e)}"
+    except Exception as e:
+        return [], f"공시 목록 조회 중 예상치 못한 오류 발생: {str(e)}"
+    
+    return [], "알 수 없는 오류로 공시 목록을 조회할 수 없습니다."
 
 
 async def get_financial_statement_xbrl(rcept_no: str, reprt_code: str) -> str:
@@ -731,149 +761,172 @@ async def search_disclosure(
     Returns:
         검색된 각 공시의 주요 재무 정보 요약 텍스트 (요청 항목 관련 데이터가 있는 경우만)
     """
-    # 진행 상황 알림
-    info_msg = f"{company_name}의"
-    if requested_items:
-        info_msg += f" {', '.join(requested_items)} 관련"
-    info_msg += " 재무 정보를 검색합니다."
-    ctx.info(info_msg)
-    
-    # end_date 조정
-    original_end_date = end_date
-    adjusted_end_date, was_adjusted = adjust_end_date(end_date)
-    
-    if was_adjusted:
-        ctx.info(f"공시 제출 기간을 고려하여 검색 종료일을 {original_end_date}에서 {adjusted_end_date}로 자동 조정했습니다.")
-        end_date = adjusted_end_date
-    
-    # 회사 코드 조회
-    corp_code, matched_name = await get_corp_code_by_name(company_name)
-    if not corp_code:
-        return f"'{company_name}' 회사를 찾을 수 없습니다."
-    
-    ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
-    
-    # 공시 목록 조회
-    disclosures = await get_disclosure_list(corp_code, start_date, end_date)
-    if not disclosures:
-        date_range_msg = f"{start_date}부터 {end_date}까지"
-        if was_adjusted:
-            date_range_msg += f" (원래 요청: {start_date}~{original_end_date}, 공시 제출 기간 고려하여 확장)"
-        return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다."
-    
-    ctx.info(f"{len(disclosures)}개의 정기공시를 찾았습니다. XBRL 데이터 조회 및 분석을 시도합니다.")
-
-    # 추출할 재무 항목 및 가능한 태그 리스트 정의
-    all_items_and_tags = {
-        "매출액": ["ifrs-full:Revenue"],
-        "영업이익": ["dart:OperatingIncomeLoss"],
-        "당기순이익": ["ifrs-full:ProfitLoss"],
-        "영업활동 현금흐름": ["ifrs-full:CashFlowsFromUsedInOperatingActivities"],
-        "투자활동 현금흐름": ["ifrs-full:CashFlowsFromUsedInInvestingActivities"],
-        "재무활동 현금흐름": ["ifrs-full:CashFlowsFromUsedInFinancingActivities"],
-        "자산총계": ["ifrs-full:Assets"],
-        "부채총계": ["ifrs-full:Liabilities"],
-        "자본총계": ["ifrs-full:Equity"]
-    }
-
-    # 사용자가 요청한 항목만 추출하도록 구성
-    if requested_items:
-        items_to_extract = {item: tags for item, tags in all_items_and_tags.items() if item in requested_items}
-        if not items_to_extract:
-             unsupported_items = [item for item in requested_items if item not in all_items_and_tags]
-             return f"요청하신 항목 중 지원되지 않는 항목이 있습니다: {', '.join(unsupported_items)}. 지원 항목: {', '.join(all_items_and_tags.keys())}"
-    else:
-        items_to_extract = all_items_and_tags
-    
     # 결과 문자열 초기화
-    result = f"# {matched_name} 주요 재무 정보 ({start_date} ~ {end_date})\n"
-    if requested_items: 
-        result += f"({', '.join(requested_items)} 관련)\n"
-    result += "\n"
+    result = ""
     
-    # 최대 5개의 공시만 처리 (API 호출 제한 및 시간 고려)
-    disclosure_count = min(5, len(disclosures))
-    processed_count = 0
-    relevant_reports_found = 0
-    
-    # 각 공시별 처리
-    for disclosure in disclosures[:disclosure_count]:
-        report_name = disclosure.get('report_nm', '제목 없음')
-        rcept_dt = disclosure.get('rcept_dt', '날짜 없음')
-        rcept_no = disclosure.get('rcept_no', '')
-
-        # 보고서 코드 결정
-        reprt_code = determine_report_code(report_name)
-        if not rcept_no or not reprt_code:
-            continue
-
-        # 진행 상황 보고
-        processed_count += 1
-        await ctx.report_progress(processed_count, disclosure_count) 
-        
-        ctx.info(f"공시 {processed_count}/{disclosure_count} 분석 중: {report_name} (접수번호: {rcept_no})")
-        
-        # XBRL 데이터 조회
-        xbrl_text = await get_financial_statement_xbrl(rcept_no, reprt_code)
-        
-        # XBRL 파싱 및 데이터 추출
-        financial_data = {}
-        parse_error = None
-        
-        if not xbrl_text.startswith(("DART API 오류:", "API 요청 실패:", "ZIP 파일", "<인코딩 오류:")):
-             try:
-                 financial_data = parse_xbrl_financial_data(xbrl_text, items_to_extract)
-             except Exception as e:
-                 parse_error = e
-                 ctx.warning(f"XBRL 파싱/분석 중 오류 발생 ({report_name}): {e}")
-                 financial_data = {key: "분석 중 예외 발생" for key in items_to_extract}
-        elif xbrl_text.startswith("DART API 오류: 013"):
-            financial_data = {key: "데이터 없음(API 013)" for key in items_to_extract}
-        else:
-            error_summary = xbrl_text.split('\n')[0][:100]
-            financial_data = {key: f"오류({error_summary})" for key in items_to_extract}
-
-        # 요청된 항목 관련 데이터가 있는지 확인
-        is_relevant = True
+    try:
+        # 진행 상황 알림
+        info_msg = f"{company_name}의"
         if requested_items:
-            is_relevant = any(
-                item in financial_data and 
-                financial_data[item] not in INVALID_VALUE_INDICATORS and 
-                not financial_data[item].startswith("오류(") and
-                not financial_data[item].startswith("분석 중")
-                for item in requested_items
-            )
+            info_msg += f" {', '.join(requested_items)} 관련"
+        info_msg += " 재무 정보를 검색합니다."
+        ctx.info(info_msg)
+        
+        # end_date 조정
+        original_end_date = end_date
+        adjusted_end_date, was_adjusted = adjust_end_date(end_date)
+        
+        if was_adjusted:
+            ctx.info(f"공시 제출 기간을 고려하여 검색 종료일을 {original_end_date}에서 {adjusted_end_date}로 자동 조정했습니다.")
+            end_date = adjusted_end_date
+        
+        # 회사 코드 조회
+        corp_code, matched_name = await get_corp_code_by_name(company_name)
+        if not corp_code:
+            return f"회사 검색 오류: {matched_name}"
+        
+        ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
+        
+        # 공시 목록 조회
+        disclosures, error_msg = await get_disclosure_list(corp_code, start_date, end_date)
+        if error_msg:
+            return f"공시 목록 조회 오류: {error_msg}"
+            
+        if not disclosures:
+            date_range_msg = f"{start_date}부터 {end_date}까지"
+            if was_adjusted:
+                date_range_msg += f" (원래 요청: {start_date}~{original_end_date}, 공시 제출 기간 고려하여 확장)"
+            return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다."
+        
+        ctx.info(f"{len(disclosures)}개의 정기공시를 찾았습니다. XBRL 데이터 조회 및 분석을 시도합니다.")
 
-        # 관련 데이터가 있는 공시만 결과에 추가
-        if is_relevant:
-            relevant_reports_found += 1
-            result += f"## {report_name} ({rcept_dt})\n"
-            result += f"접수번호: {rcept_no}\n\n"
-            
-            if financial_data:
-                for item, value in financial_data.items():
-                     result += f"- {item}: {value}\n"
-            elif parse_error:
-                 result += f"- XBRL 분석 중 오류 발생: {parse_error}\n"
-            else:
-                 result += "- 주요 재무 정보를 추출하지 못했습니다.\n"
-            
-            result += "\n" + "-" * 50 + "\n\n"
+        # 추출할 재무 항목 및 가능한 태그 리스트 정의
+        all_items_and_tags = {
+            "매출액": ["ifrs-full:Revenue"],
+            "영업이익": ["dart:OperatingIncomeLoss"],
+            "당기순이익": ["ifrs-full:ProfitLoss"],
+            "영업활동 현금흐름": ["ifrs-full:CashFlowsFromUsedInOperatingActivities"],
+            "투자활동 현금흐름": ["ifrs-full:CashFlowsFromUsedInInvestingActivities"],
+            "재무활동 현금흐름": ["ifrs-full:CashFlowsFromUsedInFinancingActivities"],
+            "자산총계": ["ifrs-full:Assets"],
+            "부채총계": ["ifrs-full:Liabilities"],
+            "자본총계": ["ifrs-full:Equity"]
+        }
+
+        # 사용자가 요청한 항목만 추출하도록 구성
+        if requested_items:
+            items_to_extract = {item: tags for item, tags in all_items_and_tags.items() if item in requested_items}
+            if not items_to_extract:
+                 unsupported_items = [item for item in requested_items if item not in all_items_and_tags]
+                 return f"요청하신 항목 중 지원되지 않는 항목이 있습니다: {', '.join(unsupported_items)}. 지원 항목: {', '.join(all_items_and_tags.keys())}"
         else:
-             ctx.info(f"[{report_name}] 건너뜀: 요청하신 항목({', '.join(requested_items)}) 관련 유효 데이터 없음.")
+            items_to_extract = all_items_and_tags
+        
+        # 결과 문자열 초기화
+        result = f"# {matched_name} 주요 재무 정보 ({start_date} ~ {end_date})\n"
+        if requested_items: 
+            result += f"({', '.join(requested_items)} 관련)\n"
+        result += "\n"
+        
+        # 최대 5개의 공시만 처리 (API 호출 제한 및 시간 고려)
+        disclosure_count = min(5, len(disclosures))
+        processed_count = 0
+        relevant_reports_found = 0
+        api_errors = []
+        
+        # 각 공시별 처리
+        for disclosure in disclosures[:disclosure_count]:
+            report_name = disclosure.get('report_nm', '제목 없음')
+            rcept_dt = disclosure.get('rcept_dt', '날짜 없음')
+            rcept_no = disclosure.get('rcept_no', '')
 
-    # 최종 결과 메시지 추가
-    if relevant_reports_found == 0 and processed_count > 0:
-         no_data_reason = "요청하신 항목 관련 유효한 데이터를 찾지 못했거나" if requested_items else "주요 재무 데이터를 찾지 못했거나"
-         result += f"※ 처리된 공시에서 {no_data_reason}, 데이터가 제공되지 않는 보고서일 수 있습니다.\n"
-    elif processed_count == 0 and disclosures:
-         result += "조회된 정기공시가 있으나, XBRL 데이터를 포함하는 보고서 유형(사업/반기/분기)이 아니거나 처리 중 오류가 발생했습니다.\n"
-         
-    if len(disclosures) > disclosure_count:
-        result += f"※ 총 {len(disclosures)}개의 정기공시 중 최신 {disclosure_count}개에 대해 분석을 시도했습니다.\n"
-    
-    if relevant_reports_found > 0 and requested_items:
-         result += f"\n※ 요청하신 항목({', '.join(requested_items)}) 관련 정보가 있는 {relevant_reports_found}개의 보고서를 표시했습니다.\n"
+            # 보고서 코드 결정
+            reprt_code = determine_report_code(report_name)
+            if not rcept_no or not reprt_code:
+                continue
+
+            # 진행 상황 보고
+            processed_count += 1
+            await ctx.report_progress(processed_count, disclosure_count) 
+            
+            ctx.info(f"공시 {processed_count}/{disclosure_count} 분석 중: {report_name} (접수번호: {rcept_no})")
+            
+            # XBRL 데이터 조회
+            try:
+                xbrl_text = await get_financial_statement_xbrl(rcept_no, reprt_code)
+                
+                # XBRL 파싱 및 데이터 추출
+                financial_data = {}
+                parse_error = None
+                
+                if not xbrl_text.startswith(("DART API 오류:", "API 요청 실패:", "ZIP 파일", "<인코딩 오류:")):
+                     try:
+                         financial_data = parse_xbrl_financial_data(xbrl_text, items_to_extract)
+                     except Exception as e:
+                         parse_error = e
+                         ctx.warning(f"XBRL 파싱/분석 중 오류 발생 ({report_name}): {e}")
+                         financial_data = {key: "분석 중 예외 발생" for key in items_to_extract}
+                elif xbrl_text.startswith("DART API 오류: 013"):
+                    financial_data = {key: "데이터 없음(API 013)" for key in items_to_extract}
+                else:
+                    error_summary = xbrl_text.split('\n')[0][:100]
+                    financial_data = {key: f"오류({error_summary})" for key in items_to_extract}
+                    api_errors.append(f"{report_name}: {error_summary}")
+
+                # 요청된 항목 관련 데이터가 있는지 확인
+                is_relevant = True
+                if requested_items:
+                    is_relevant = any(
+                        item in financial_data and 
+                        financial_data[item] not in INVALID_VALUE_INDICATORS and 
+                        not financial_data[item].startswith("오류(") and
+                        not financial_data[item].startswith("분석 중")
+                        for item in requested_items
+                    )
+
+                # 관련 데이터가 있는 공시만 결과에 추가
+                if is_relevant:
+                    relevant_reports_found += 1
+                    result += f"## {report_name} ({rcept_dt})\n"
+                    result += f"접수번호: {rcept_no}\n\n"
+                    
+                    if financial_data:
+                        for item, value in financial_data.items():
+                             result += f"- {item}: {value}\n"
+                    elif parse_error:
+                         result += f"- XBRL 분석 중 오류 발생: {parse_error}\n"
+                    else:
+                         result += "- 주요 재무 정보를 추출하지 못했습니다.\n"
+                    
+                    result += "\n" + "-" * 50 + "\n\n"
+                else:
+                     ctx.info(f"[{report_name}] 건너뜀: 요청하신 항목({', '.join(requested_items) if requested_items else '전체'}) 관련 유효 데이터 없음.")
+            except Exception as e:
+                ctx.error(f"공시 처리 중 예상치 못한 오류 발생 ({report_name}): {e}")
+                api_errors.append(f"{report_name}: {str(e)}")
+                traceback.print_exc()
+
+        # 최종 결과 메시지 추가
+        if api_errors:
+            result += "\n## 처리 중 발생한 오류\n"
+            for error in api_errors:
+                result += f"- {error}\n"
+            result += "\n"
+            
+        if relevant_reports_found == 0 and processed_count > 0:
+             no_data_reason = "요청하신 항목 관련 유효한 데이터를 찾지 못했거나" if requested_items else "주요 재무 데이터를 찾지 못했거나"
+             result += f"※ 처리된 공시에서 {no_data_reason}, 데이터가 제공되지 않는 보고서일 수 있습니다.\n"
+        elif processed_count == 0 and disclosures:
+             result += "조회된 정기공시가 있으나, XBRL 데이터를 포함하는 보고서 유형(사업/반기/분기)이 아니거나 처리 중 오류가 발생했습니다.\n"
+             
+        if len(disclosures) > disclosure_count:
+            result += f"※ 총 {len(disclosures)}개의 정기공시 중 최신 {disclosure_count}개에 대해 분석을 시도했습니다.\n"
+        
+        if relevant_reports_found > 0 and requested_items:
+             result += f"\n※ 요청하신 항목({', '.join(requested_items)}) 관련 정보가 있는 {relevant_reports_found}개의 보고서를 표시했습니다.\n"
+
+    except Exception as e:
+        return f"재무 정보 검색 중 예상치 못한 오류가 발생했습니다: {str(e)}\n\n{traceback.format_exc()}"
 
     result += chat_guideline
     return result.strip()
@@ -901,137 +954,172 @@ async def search_detailed_financial_data(
     Returns:
         선택한 재무제표 유형(들)의 세부 항목 정보가 포함된 텍스트
     """
-    # 재무제표 유형 검증
-    if statement_type is not None and statement_type not in STATEMENT_TYPES:
-        return f"지원하지 않는 재무제표 유형입니다. 지원되는 유형: {', '.join(STATEMENT_TYPES.keys())}"
-    
-    # 모든 재무제표 유형을 처리할 경우
-    if statement_type is None:
-        all_statement_types = list(STATEMENT_TYPES.keys())
-        ctx.info(f"{company_name}의 모든 재무제표(재무상태표, 손익계산서, 현금흐름표) 세부 정보를 검색합니다.")
-    else:
-        all_statement_types = [statement_type]
-        ctx.info(f"{company_name}의 {statement_type} 세부 정보를 검색합니다.")
-    
-    # end_date 조정
-    original_end_date = end_date
-    adjusted_end_date, was_adjusted = adjust_end_date(end_date)
-    
-    if was_adjusted:
-        ctx.info(f"공시 제출 기간을 고려하여 검색 종료일을 {original_end_date}에서 {adjusted_end_date}로 자동 조정했습니다.")
-        end_date = adjusted_end_date
-    
-    # 회사 코드 조회
-    corp_code, matched_name = await get_corp_code_by_name(company_name)
-    if not corp_code:
-        return f"'{company_name}' 회사를 찾을 수 없습니다."
-    
-    ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
-    
-    # 공시 목록 조회
-    disclosures = await get_disclosure_list(corp_code, start_date, end_date)
-    if not disclosures:
-        date_range_msg = f"{start_date}부터 {end_date}까지"
-        if was_adjusted:
-            date_range_msg += f" (원래 요청: {start_date}~{original_end_date}, 공시 제출 기간 고려하여 확장)"
-        return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다."
-    
-    ctx.info(f"{len(disclosures)}개의 정기공시를 찾았습니다. XBRL 데이터 조회 및 분석을 시도합니다.")
-
     # 결과 문자열 초기화
-    result = f"# {matched_name}의 세부 재무 정보 ({start_date} ~ {end_date})\n\n"
+    result = ""
+    api_errors = []
     
-    # 최대 5개의 공시만 처리 (API 호출 제한 및 시간 고려)
-    disclosure_count = min(5, len(disclosures))
-    
-    # 각 공시별로 XBRL 데이터 조회 및 저장
-    processed_disclosures = []
-    
-    for disclosure in disclosures[:disclosure_count]:
-        report_name = disclosure.get('report_nm', '제목 없음')
-        rcept_dt = disclosure.get('rcept_dt', '날짜 없음')
-        rcept_no = disclosure.get('rcept_no', '')
-
-        # 보고서 코드 결정
-        reprt_code = determine_report_code(report_name)
-        if not rcept_no or not reprt_code:
-            continue
-
-        ctx.info(f"공시 분석 중: {report_name} (접수번호: {rcept_no})")
+    try:
+        # 재무제표 유형 검증
+        if statement_type is not None and statement_type not in STATEMENT_TYPES:
+            return f"지원하지 않는 재무제표 유형입니다. 지원되는 유형: {', '.join(STATEMENT_TYPES.keys())}"
         
-        # XBRL 데이터 조회
-        xbrl_text = await get_financial_statement_xbrl(rcept_no, reprt_code)
+        # 모든 재무제표 유형을 처리할 경우
+        if statement_type is None:
+            all_statement_types = list(STATEMENT_TYPES.keys())
+            ctx.info(f"{company_name}의 모든 재무제표(재무상태표, 손익계산서, 현금흐름표) 세부 정보를 검색합니다.")
+        else:
+            all_statement_types = [statement_type]
+            ctx.info(f"{company_name}의 {statement_type} 세부 정보를 검색합니다.")
         
-        if not xbrl_text.startswith(("DART API 오류:", "API 요청 실패:", "ZIP 파일", "<인코딩 오류:")):
-            processed_disclosures.append({
-                'report_name': report_name,
-                'rcept_dt': rcept_dt,
-                'rcept_no': rcept_no,
-                'reprt_code': reprt_code,
-                'xbrl_text': xbrl_text
-            })
-    
-    # 각 재무제표 유형별 처리
-    for current_statement_type in all_statement_types:
-        result += f"## {current_statement_type}\n\n"
+        # end_date 조정
+        original_end_date = end_date
+        adjusted_end_date, was_adjusted = adjust_end_date(end_date)
         
-        # 해당 재무제표 유형에 대한 태그 목록 조회
-        items_to_extract = DETAILED_TAGS[current_statement_type]
+        if was_adjusted:
+            ctx.info(f"공시 제출 기간을 고려하여 검색 종료일을 {original_end_date}에서 {adjusted_end_date}로 자동 조정했습니다.")
+            end_date = adjusted_end_date
         
-        # 재무제표 유형별 결과 저장
-        reports_with_data = 0
+        # 회사 코드 조회
+        corp_code, matched_name = await get_corp_code_by_name(company_name)
+        if not corp_code:
+            return f"회사 검색 오류: {matched_name}"
         
-        # 각 공시별 처리
-        for disclosure in processed_disclosures:
-            report_name = disclosure['report_name']
-            rcept_dt = disclosure['rcept_dt']
-            rcept_no = disclosure['rcept_no']
-            xbrl_text = disclosure['xbrl_text']
+        ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
+        
+        # 공시 목록 조회
+        disclosures, error_msg = await get_disclosure_list(corp_code, start_date, end_date)
+        if error_msg:
+            return error_msg
             
-            # XBRL 파싱 및 데이터 추출
+        if not disclosures:
+            date_range_msg = f"{start_date}부터 {end_date}까지"
+            if was_adjusted:
+                date_range_msg += f" (원래 요청: {start_date}~{original_end_date}, 공시 제출 기간 고려하여 확장)"
+            return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다."
+        
+        ctx.info(f"{len(disclosures)}개의 정기공시를 찾았습니다. XBRL 데이터 조회 및 분석을 시도합니다.")
+
+        # 결과 문자열 초기화
+        result = f"# {matched_name}의 세부 재무 정보 ({start_date} ~ {end_date})\n\n"
+        
+        # 최대 5개의 공시만 처리 (API 호출 제한 및 시간 고려)
+        disclosure_count = min(5, len(disclosures))
+        
+        # 각 공시별로 XBRL 데이터 조회 및 저장
+        processed_disclosures = []
+        
+        for disclosure in disclosures[:disclosure_count]:
             try:
-                financial_data = parse_xbrl_financial_data(xbrl_text, items_to_extract)
+                report_name = disclosure.get('report_nm', '제목 없음')
+                rcept_dt = disclosure.get('rcept_dt', '날짜 없음')
+                rcept_no = disclosure.get('rcept_no', '')
+
+                # 보고서 코드 결정
+                reprt_code = determine_report_code(report_name)
+                if not rcept_no or not reprt_code:
+                    continue
+
+                ctx.info(f"공시 분석 중: {report_name} (접수번호: {rcept_no})")
                 
-                # 유효한 데이터가 있는지 확인 (최소 1개 항목 이상)
-                valid_items_count = sum(1 for value in financial_data.values() 
-                                      if value not in INVALID_VALUE_INDICATORS 
-                                      and not value.startswith("오류(") 
-                                      and not value.startswith("분석 중"))
+                # XBRL 데이터 조회
+                xbrl_text = await get_financial_statement_xbrl(rcept_no, reprt_code)
                 
-                if valid_items_count >= 1:
-                    reports_with_data += 1
-                    
-                    # 데이터 결과에 추가
-                    result += f"### {report_name} ({rcept_dt})\n"
-                    result += f"접수번호: {rcept_no}\n\n"
-                    
-                    # 테이블 형식으로 데이터 출력
-                    result += "| 항목 | 값 |\n"
-                    result += "|------|------|\n"
-                    
-                    for item, value in financial_data.items():
-                        if value not in INVALID_VALUE_INDICATORS and not value.startswith("오류(") and not value.startswith("분석 중"):
-                            result += f"| {item} | {value} |\n"
-                        else:
-                            # 매칭되지 않은 항목은 '-'로 표시
-                            result += f"| {item} | - |\n"
-                    
-                    result += "\n"
+                if not xbrl_text.startswith(("DART API 오류:", "API 요청 실패:", "ZIP 파일", "<인코딩 오류:")):
+                    processed_disclosures.append({
+                        'report_name': report_name,
+                        'rcept_dt': rcept_dt,
+                        'rcept_no': rcept_no,
+                        'reprt_code': reprt_code,
+                        'xbrl_text': xbrl_text
+                    })
                 else:
-                    ctx.info(f"[{report_name}] {current_statement_type}의 유효한 데이터가 없습니다.")
+                    error_summary = xbrl_text.split('\n')[0][:100]
+                    api_errors.append(f"{report_name}: {error_summary}")
+                    ctx.warning(f"XBRL 데이터 조회 오류 ({report_name}): {error_summary}")
             except Exception as e:
-                ctx.warning(f"XBRL 파싱/분석 중 오류 발생 ({report_name}): {e}")
+                api_errors.append(f"{report_name if 'report_name' in locals() else '알 수 없는 보고서'}: {str(e)}")
+                ctx.error(f"공시 데이터 처리 중 예상치 못한 오류 발생: {e}")
+                traceback.print_exc()
         
-        # 재무제표 유형별 결과 요약
-        if reports_with_data == 0:
-            result += f"조회된 공시에서 유효한 {current_statement_type} 데이터를 찾지 못했습니다.\n\n"
+        # 각 재무제표 유형별 처리
+        for current_statement_type in all_statement_types:
+            result += f"## {current_statement_type}\n\n"
+            
+            # 해당 재무제표 유형에 대한 태그 목록 조회
+            items_to_extract = DETAILED_TAGS[current_statement_type]
+            
+            # 재무제표 유형별 결과 저장
+            reports_with_data = 0
+            
+            # 각 공시별 처리
+            for disclosure in processed_disclosures:
+                try:
+                    report_name = disclosure['report_name']
+                    rcept_dt = disclosure['rcept_dt']
+                    rcept_no = disclosure['rcept_no']
+                    xbrl_text = disclosure['xbrl_text']
+                    
+                    # XBRL 파싱 및 데이터 추출
+                    try:
+                        financial_data = parse_xbrl_financial_data(xbrl_text, items_to_extract)
+                        
+                        # 유효한 데이터가 있는지 확인 (최소 1개 항목 이상)
+                        valid_items_count = sum(1 for value in financial_data.values() 
+                                              if value not in INVALID_VALUE_INDICATORS 
+                                              and not value.startswith("오류(") 
+                                              and not value.startswith("분석 중"))
+                        
+                        if valid_items_count >= 1:
+                            reports_with_data += 1
+                            
+                            # 데이터 결과에 추가
+                            result += f"### {report_name} ({rcept_dt})\n"
+                            result += f"접수번호: {rcept_no}\n\n"
+                            
+                            # 테이블 형식으로 데이터 출력
+                            result += "| 항목 | 값 |\n"
+                            result += "|------|------|\n"
+                            
+                            for item, value in financial_data.items():
+                                if value not in INVALID_VALUE_INDICATORS and not value.startswith("오류(") and not value.startswith("분석 중"):
+                                    result += f"| {item} | {value} |\n"
+                                else:
+                                    # 매칭되지 않은 항목은 '-'로 표시
+                                    result += f"| {item} | - |\n"
+                            
+                            result += "\n"
+                        else:
+                            ctx.info(f"[{report_name}] {current_statement_type}의 유효한 데이터가 없습니다.")
+                    except Exception as e:
+                        ctx.warning(f"XBRL 파싱/분석 중 오류 발생 ({report_name}): {e}")
+                        api_errors.append(f"{report_name} 분석 중 오류: {str(e)}")
+                except Exception as e:
+                    ctx.error(f"공시 데이터 처리 중 예상치 못한 오류 발생: {e}")
+                    api_errors.append(f"공시 데이터 처리 오류: {str(e)}")
+                    traceback.print_exc()
+            
+            # 재무제표 유형별 결과 요약
+            if reports_with_data == 0:
+                result += f"조회된 공시에서 유효한 {current_statement_type} 데이터를 찾지 못했습니다.\n\n"
+            
+            result += "-" * 50 + "\n\n"
         
-        result += "-" * 50 + "\n\n"
-    
-    # 최종 결과 메시지 추가
-    if len(disclosures) > disclosure_count:
-        result += f"※ 총 {len(disclosures)}개의 정기공시 중 최신 {disclosure_count}개에 대해 분석을 시도했습니다.\n"
-    
+        # 최종 결과 메시지 추가
+        if api_errors:
+            result += "\n## 처리 중 발생한 오류\n"
+            for error in api_errors:
+                result += f"- {error}\n"
+            result += "\n"
+            
+        if len(disclosures) > disclosure_count:
+            result += f"※ 총 {len(disclosures)}개의 정기공시 중 최신 {disclosure_count}개에 대해 분석을 시도했습니다.\n"
+        
+        if len(processed_disclosures) == 0:
+            result += "※ 모든 공시에서 XBRL 데이터를 추출하는데 실패했습니다. 오류 메시지를 확인해주세요.\n"
+        
+    except Exception as e:
+        return f"세부 재무 정보 검색 중 예상치 못한 오류가 발생했습니다: {str(e)}\n\n{traceback.format_exc()}"
+
     result += chat_guideline
     return result.strip()
 
@@ -1064,90 +1152,111 @@ async def search_business_information(
     Returns:
         요청한 정보 유형에 대한 해당 회사의 사업 정보 텍스트
     """
-    # 지원하는 정보 유형 검증
-    supported_types = [
-        '사업의 개요', '주요 제품 및 서비스', '원재료 및 생산설비',
-        '매출 및 수주상황', '위험관리 및 파생거래', '주요계약 및 연구개발활동',
-        '기타 참고사항'
-    ]
+    # 결과 문자열 초기화
+    result = ""
     
-    if information_type not in supported_types:
-        return f"지원하지 않는 정보 유형입니다. 지원되는 유형: {', '.join(supported_types)}"
-    
-    # 진행 상황 알림
-    ctx.info(f"{company_name}의 {information_type} 정보를 검색합니다.")
-    
-    # end_date 조정
-    original_end_date = end_date
-    adjusted_end_date, was_adjusted = adjust_end_date(end_date)
-    
-    if was_adjusted:
-        ctx.info(f"공시 제출 기간을 고려하여 검색 종료일을 {original_end_date}에서 {adjusted_end_date}로 자동 조정했습니다.")
-        end_date = adjusted_end_date
-    
-    # 회사 코드 조회
-    corp_code, matched_name = await get_corp_code_by_name(company_name)
-    if not corp_code:
-        return f"'{company_name}' 회사를 찾을 수 없습니다."
-    
-    ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
-    
-    # 공시 목록 조회
-    disclosures = await get_disclosure_list(corp_code, start_date, end_date)
-    if not disclosures:
-        date_range_msg = f"{start_date}부터 {end_date}까지"
+    try:
+        # 지원하는 정보 유형 검증
+        supported_types = [
+            '사업의 개요', '주요 제품 및 서비스', '원재료 및 생산설비',
+            '매출 및 수주상황', '위험관리 및 파생거래', '주요계약 및 연구개발활동',
+            '기타 참고사항'
+        ]
+        
+        if information_type not in supported_types:
+            return f"지원하지 않는 정보 유형입니다. 지원되는 유형: {', '.join(supported_types)}"
+        
+        # 진행 상황 알림
+        ctx.info(f"{company_name}의 {information_type} 정보를 검색합니다.")
+        
+        # end_date 조정
+        original_end_date = end_date
+        adjusted_end_date, was_adjusted = adjust_end_date(end_date)
+        
         if was_adjusted:
-            date_range_msg += f" (원래 요청: {start_date}~{original_end_date}, 공시 제출 기간 고려하여 확장)"
-        return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다."
-    
-    ctx.info(f"{len(disclosures)}개의 정기공시를 찾았습니다. 적절한 공시를 선택하여 정보를 추출합니다.")
-    
-    # 사업정보를 포함할 가능성이 높은 정기보고서를 우선순위에 따라 필터링
-    priority_reports = [
-        "사업보고서", "반기보고서", "분기보고서"
-    ]
-    
-    selected_disclosure = None
-    
-    # 우선순위에 따라 공시 선택
-    for priority in priority_reports:
-        for disclosure in disclosures:
-            report_name = disclosure.get('report_nm', '')
-            if priority in report_name:
-                selected_disclosure = disclosure
+            ctx.info(f"공시 제출 기간을 고려하여 검색 종료일을 {original_end_date}에서 {adjusted_end_date}로 자동 조정했습니다.")
+            end_date = adjusted_end_date
+        
+        # 회사 코드 조회
+        corp_code, matched_name = await get_corp_code_by_name(company_name)
+        if not corp_code:
+            return f"회사 검색 오류: {matched_name}"
+        
+        ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
+        
+        # 공시 목록 조회
+        disclosures, error_msg = await get_disclosure_list(corp_code, start_date, end_date)
+        if error_msg:
+            return error_msg
+            
+        ctx.info(f"{len(disclosures)}개의 정기공시를 찾았습니다. 적절한 공시를 선택하여 정보를 추출합니다.")
+        
+        # 사업정보를 포함할 가능성이 높은 정기보고서를 우선순위에 따라 필터링
+        priority_reports = [
+            "사업보고서", "반기보고서", "분기보고서"
+        ]
+        
+        selected_disclosure = None
+        
+        # 우선순위에 따라 공시 선택
+        for priority in priority_reports:
+            for disclosure in disclosures:
+                report_name = disclosure.get('report_nm', '')
+                if priority in report_name:
+                    selected_disclosure = disclosure
+                    break
+            if selected_disclosure:
                 break
-        if selected_disclosure:
-            break
-    
-    # 우선순위에 따른 공시를 찾지 못한 경우 첫 번째 공시 선택
-    if not selected_disclosure and disclosures:
-        selected_disclosure = disclosures[0]
-    
-    if not selected_disclosure:
-        return f"'{matched_name}'의 적절한 공시를 찾을 수 없습니다."
-    
-    # 선택된 공시 정보
-    report_name = selected_disclosure.get('report_nm', '제목 없음')
-    rcept_dt = selected_disclosure.get('rcept_dt', '날짜 없음')
-    rcept_no = selected_disclosure.get('rcept_no', '')
-    
-    ctx.info(f"'{report_name}' (접수번호: {rcept_no}, 접수일: {rcept_dt}) 공시에서 '{information_type}' 정보를 추출합니다.")
-    
-    # 섹션 추출
-    section_text = await extract_business_section_from_dart(rcept_no, information_type)
-    
-    # 추출 결과 확인
-    if section_text.startswith(f"공시서류 다운로드 실패") or section_text.startswith(f"'{information_type}' 섹션을 찾을 수 없습니다"):
-        return f"{report_name} (접수일: {rcept_dt})에서 {information_type} 정보를 찾을 수 없습니다.\n\n오류 상세: {section_text}"
-    
-    # 결과 포맷팅
-    result = f"# {matched_name} - {information_type}\n\n"
-    result += f"## 출처: {report_name} (접수일: {rcept_dt})\n\n"
-    result += section_text
-    # 텍스트가 너무 길 경우 앞부분만 반환
-    max_length = 5000  # 적절한 최대 길이 설정
-    if len(result) > max_length:
-        result = result[:max_length] + f"\n\n... (이하 생략, 총 {len(result)} 자)"
+        
+        # 우선순위에 따른 공시를 찾지 못한 경우 첫 번째 공시 선택
+        if not selected_disclosure and disclosures:
+            selected_disclosure = disclosures[0]
+        
+        if not selected_disclosure:
+            return f"'{matched_name}'의 적절한 공시를 찾을 수 없습니다."
+        
+        # 선택된 공시 정보
+        report_name = selected_disclosure.get('report_nm', '제목 없음')
+        rcept_dt = selected_disclosure.get('rcept_dt', '날짜 없음')
+        rcept_no = selected_disclosure.get('rcept_no', '')
+        
+        ctx.info(f"'{report_name}' (접수번호: {rcept_no}, 접수일: {rcept_dt}) 공시에서 '{information_type}' 정보를 추출합니다.")
+        
+        # 섹션 추출
+        try:
+            section_text = await extract_business_section_from_dart(rcept_no, information_type)
+            
+            # 추출 결과 확인
+            if section_text.startswith(f"공시서류 다운로드 실패") or section_text.startswith(f"'{information_type}' 섹션을 찾을 수 없습니다"):
+                api_error = section_text
+                result = f"# {matched_name} - {information_type}\n\n"
+                result += f"## 출처: {report_name} (접수일: {rcept_dt})\n\n"
+                result += f"정보 추출 실패: {api_error}\n\n"
+                result += "다음과 같은 이유로 정보를 추출하지 못했습니다:\n"
+                result += "1. 해당 공시에 요청하신 정보가 포함되어 있지 않을 수 있습니다.\n"
+                result += "2. DART API 호출 중 오류가 발생했을 수 있습니다.\n"
+                result += "3. 섹션 추출 과정에서 패턴 매칭에 실패했을 수 있습니다.\n"
+                return result
+            else:
+                # 결과 포맷팅
+                result = f"# {matched_name} - {information_type}\n\n"
+                result += f"## 출처: {report_name} (접수일: {rcept_dt})\n\n"
+                result += section_text
+                # 텍스트가 너무 길 경우 앞부분만 반환
+                max_length = 5000  # 적절한 최대 길이 설정
+                if len(result) > max_length:
+                    result = result[:max_length] + f"\n\n... (이하 생략, 총 {len(result)} 자)"
+        except Exception as e:
+            ctx.error(f"섹션 추출 중 예상치 못한 오류 발생: {e}")
+            result = f"# {matched_name} - {information_type}\n\n"
+            result += f"## 출처: {report_name} (접수일: {rcept_dt})\n\n"
+            result += f"정보 추출 중 오류 발생: {str(e)}\n\n"
+            result += "다음과 같은 이유로 정보를 추출하지 못했습니다:\n"
+            result += "1. 섹션 추출 과정에서 예외가 발생했습니다.\n"
+            result += "2. 오류 상세 정보: " + traceback.format_exc().replace('\n', '\n   ') + "\n"
+            
+    except Exception as e:
+        return f"사업 정보 검색 중 예상치 못한 오류가 발생했습니다: {str(e)}\n\n{traceback.format_exc()}"
 
     return result
 
