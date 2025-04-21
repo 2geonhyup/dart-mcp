@@ -124,7 +124,7 @@ chat_guideline = "\n* 제공된 공시정보들은 분기, 반기, 연간이 섞
 
 # Helper 함수
 
-async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str, List[str]]:
+async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str]:
     """
     회사명으로 회사의 고유번호를 검색하는 함수
     
@@ -132,40 +132,27 @@ async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str, List[str]]:
         corp_name: 검색할 회사명
         
     Returns:
-        (고유번호, 기업이름, 디버그로그) 튜플, 찾지 못한 경우 ("", "", 로그리스트)
+        (고유번호, 기업이름) 튜플, 찾지 못한 경우 ("", "")
     """
-    debug_logs = []  # 디버그 로그를 저장할 배열
-    debug_logs.append(f"검색 시작: '{corp_name}'")
-    
     url = f"{BASE_URL}/corpCode.xml?crtfc_key={API_KEY}"
-    debug_logs.append(f"API URL: {url}")
     
     try:
         async with httpx.AsyncClient() as client:
             try:
-                debug_logs.append("HTTP 요청 시도")
                 response = await client.get(url)
                 
                 if response.status_code != 200:
-                    error_msg = f"API 요청 실패: HTTP 상태 코드 {response.status_code}"
-                    debug_logs.append(error_msg)
-                    return ("", error_msg, debug_logs)
-                
-                debug_logs.append(f"HTTP 응답 성공: 상태 코드 {response.status_code}")
+                    return ("", f"API 요청 실패: HTTP 상태 코드 {response.status_code}")
                 
                 try:
-                    debug_logs.append("ZIP 파일 처리 시도")
                     with zipfile.ZipFile(BytesIO(response.content)) as zip_file:
                         try:
-                            debug_logs.append("CORPCODE.xml 파일 열기 시도")
                             with zip_file.open('CORPCODE.xml') as xml_file:
                                 try:
-                                    debug_logs.append("XML 파싱 시도")
                                     tree = ET.parse(xml_file)
                                     root = tree.getroot()
                                     
                                     # 검색어를 포함하는 모든 회사 찾기
-                                    debug_logs.append(f"회사 검색 시작: '{corp_name}'")
                                     matches = []
                                     for company in root.findall('.//list'):
                                         name = company.find('corp_name').text
@@ -185,48 +172,30 @@ async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str, List[str]]:
                                             
                                             code = company.find('corp_code').text
                                             matches.append((name, code, score))
-                                            debug_logs.append(f"일치 항목 발견: 이름='{name}', 코드='{code}', 점수={score}")
                                     
                                     # 일치하는 회사가 없는 경우
                                     if not matches:
-                                        error_msg = f"'{corp_name}' 회사를 찾을 수 없습니다."
-                                        debug_logs.append(error_msg)
-                                        return ("", error_msg, debug_logs)
+                                        return ("", f"'{corp_name}' 회사를 찾을 수 없습니다.")
                                     
                                     # 일치도 점수가 가장 낮은 (가장 일치하는) 회사 반환
                                     matches.sort(key=lambda x: x[2])
                                     matched_name = matches[0][0]
                                     matched_code = matches[0][1]
-                                    debug_logs.append(f"최적 일치 선택: 이름='{matched_name}', 코드='{matched_code}'")
-                                    return (matched_code, matched_name, debug_logs)
+                                    return (matched_code, matched_name)
                                 except ET.ParseError as e:
-                                    error_msg = f"XML 파싱 오류: {str(e)}"
-                                    debug_logs.append(error_msg)
-                                    return ("", error_msg, debug_logs)
+                                    return ("", f"XML 파싱 오류: {str(e)}")
                         except Exception as e:
-                            error_msg = f"ZIP 파일 내부 파일 접근 오류: {str(e)}"
-                            debug_logs.append(error_msg)
-                            return ("", error_msg, debug_logs)
+                            return ("", f"ZIP 파일 내부 파일 접근 오류: {str(e)}")
                 except zipfile.BadZipFile:
-                    error_msg = "다운로드한 파일이 유효한 ZIP 파일이 아닙니다."
-                    debug_logs.append(error_msg)
-                    return ("", error_msg, debug_logs)
+                    return ("", "다운로드한 파일이 유효한 ZIP 파일이 아닙니다.")
                 except Exception as e:
-                    error_msg = f"ZIP 파일 처리 중 오류 발생: {str(e)}"
-                    debug_logs.append(error_msg)
-                    return ("", error_msg, debug_logs)
+                    return ("", f"ZIP 파일 처리 중 오류 발생: {str(e)}")
             except httpx.RequestError as e:
-                error_msg = f"API 요청 중 네트워크 오류 발생: {str(e)}"
-                debug_logs.append(error_msg)
-                return ("", error_msg, debug_logs)
+                return ("", f"API 요청 중 네트워크 오류 발생: {str(e)}")
     except Exception as e:
-        error_msg = f"회사 코드 조회 중 예상치 못한 오류 발생: {str(e)}"
-        debug_logs.append(error_msg)
-        return ("", error_msg, debug_logs)
+        return ("", f"회사 코드 조회 중 예상치 못한 오류 발생: {str(e)}")
     
-    error_msg = "알 수 없는 오류로 회사 정보를 찾을 수 없습니다."
-    debug_logs.append(error_msg)
-    return ("", error_msg, debug_logs)
+    return ("", "알 수 없는 오류로 회사 정보를 찾을 수 없습니다.")
 
 
 async def get_disclosure_list(corp_code: str, start_date: str, end_date: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
@@ -812,22 +781,22 @@ async def search_disclosure(
             end_date = adjusted_end_date
         
         # 회사 코드 조회
-        corp_code, matched_name, debug_logs = await get_corp_code_by_name(company_name)
+        corp_code, matched_name = await get_corp_code_by_name(company_name)
         if not corp_code:
-            return f"회사 검색 오류: {matched_name}\n\n### 디버그 로그:\n" + "\n".join(debug_logs)
+            return f"회사 검색 오류: {matched_name}"
         
         ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
         
         # 공시 목록 조회
         disclosures, error_msg = await get_disclosure_list(corp_code, start_date, end_date)
         if error_msg:
-            return f"공시 목록 조회 오류: {error_msg}\n\n### 디버그 로그:\n" + "\n".join(debug_logs)
+            return f"공시 목록 조회 오류: {error_msg}"
             
         if not disclosures:
             date_range_msg = f"{start_date}부터 {end_date}까지"
             if was_adjusted:
                 date_range_msg += f" (원래 요청: {start_date}~{original_end_date}, 공시 제출 기간 고려하여 확장)"
-            return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다.\n\n### 디버그 로그:\n" + "\n".join(debug_logs)
+            return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다."
         
         ctx.info(f"{len(disclosures)}개의 정기공시를 찾았습니다. XBRL 데이터 조회 및 분석을 시도합니다.")
 
@@ -849,7 +818,7 @@ async def search_disclosure(
             items_to_extract = {item: tags for item, tags in all_items_and_tags.items() if item in requested_items}
             if not items_to_extract:
                  unsupported_items = [item for item in requested_items if item not in all_items_and_tags]
-                 return f"요청하신 항목 중 지원되지 않는 항목이 있습니다: {', '.join(unsupported_items)}. 지원 항목: {', '.join(all_items_and_tags.keys())}\n\n### 디버그 로그:\n" + "\n".join(debug_logs)
+                 return f"요청하신 항목 중 지원되지 않는 항목이 있습니다: {', '.join(unsupported_items)}. 지원 항목: {', '.join(all_items_and_tags.keys())}"
         else:
             items_to_extract = all_items_and_tags
         
@@ -956,11 +925,8 @@ async def search_disclosure(
         if relevant_reports_found > 0 and requested_items:
              result += f"\n※ 요청하신 항목({', '.join(requested_items)}) 관련 정보가 있는 {relevant_reports_found}개의 보고서를 표시했습니다.\n"
 
-        # 디버그 로그 추가
-        result += "\n\n### 디버그 로그:\n" + "\n".join(debug_logs)
-
     except Exception as e:
-        return f"재무 정보 검색 중 예상치 못한 오류가 발생했습니다: {str(e)}\n\n{traceback.format_exc()}\n\n### 디버그 로그:\n" + "\n".join(debug_logs if 'debug_logs' in locals() else ["디버그 로그를 수집하기 전에 오류 발생"])
+        return f"재무 정보 검색 중 예상치 못한 오류가 발생했습니다: {str(e)}\n\n{traceback.format_exc()}"
 
     result += chat_guideline
     return result.strip()
@@ -1014,9 +980,9 @@ async def search_detailed_financial_data(
             end_date = adjusted_end_date
         
         # 회사 코드 조회
-        corp_code, matched_name, debug_logs = await get_corp_code_by_name(company_name)
+        corp_code, matched_name = await get_corp_code_by_name(company_name)
         if not corp_code:
-            return f"회사 검색 오류: {matched_name}\n\n### 디버그 로그:\n" + "\n".join(debug_logs)
+            return f"회사 검색 오류: {matched_name}"
         
         ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
         
@@ -1029,7 +995,7 @@ async def search_detailed_financial_data(
             date_range_msg = f"{start_date}부터 {end_date}까지"
             if was_adjusted:
                 date_range_msg += f" (원래 요청: {start_date}~{original_end_date}, 공시 제출 기간 고려하여 확장)"
-            return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다.\n\n### 디버그 로그:\n" + "\n".join(debug_logs)
+            return f"{date_range_msg} '{matched_name}'(고유번호: {corp_code})의 정기공시가 없습니다."
         
         ctx.info(f"{len(disclosures)}개의 정기공시를 찾았습니다. XBRL 데이터 조회 및 분석을 시도합니다.")
 
@@ -1212,9 +1178,9 @@ async def search_business_information(
             end_date = adjusted_end_date
         
         # 회사 코드 조회
-        corp_code, matched_name, debug_logs = await get_corp_code_by_name(company_name)
+        corp_code, matched_name = await get_corp_code_by_name(company_name)
         if not corp_code:
-            return f"회사 검색 오류: {matched_name}\n\n### 디버그 로그:\n" + "\n".join(debug_logs)
+            return f"회사 검색 오류: {matched_name}"
         
         ctx.info(f"{matched_name}(고유번호: {corp_code})의 공시를 검색합니다.")
         
