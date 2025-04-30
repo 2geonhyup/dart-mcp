@@ -1284,6 +1284,238 @@ async def get_current_date(
     return formatted_date
 
 
+async def get_financial_json(corp_code: str, bsns_year: str, reprt_code: str, fs_div: str = "OFS") -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """
+    DART API를 통해 단일회사 전체 재무제표를 JSON 형태로 가져오는 함수
+    
+    Args:
+        corp_code: 회사 고유번호(8자리)
+        bsns_year: 사업연도(4자리) 예: "2023"
+        reprt_code: 보고서 코드 (11011: 사업보고서, 11012: 반기보고서, 11013: 1분기보고서, 11014: 3분기보고서)
+        fs_div: 개별/연결구분 (OFS:재무제표, CFS:연결재무제표)
+        
+    Returns:
+        (재무 데이터 리스트, 오류 메시지) 튜플. 성공 시 (리스트, None), 실패 시 (빈 리스트, 오류 메시지)
+    """
+    url = f"{BASE_URL}/fnlttSinglAcntAll.json?crtfc_key={API_KEY}&corp_code={corp_code}&bsns_year={bsns_year}&reprt_code={reprt_code}&fs_div={fs_div}"
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(url)
+                
+                if response.status_code != 200:
+                    return [], f"API 요청 실패: HTTP 상태 코드 {response.status_code}"
+                
+                try:
+                    result = response.json()
+                    
+                    if result.get('status') != '000':
+                        status = result.get('status', '알 수 없음')
+                        msg = result.get('message', '알 수 없는 오류')
+                        return [], f"DART API 오류: {status} - {msg}"
+                    
+                    return result.get('list', []), None
+                except Exception as e:
+                    return [], f"응답 JSON 파싱 오류: {str(e)}"
+            except httpx.RequestError as e:
+                return [], f"API 요청 중 네트워크 오류 발생: {str(e)}"
+    except Exception as e:
+        return [], f"재무 데이터 조회 중 예상치 못한 오류 발생: {str(e)}"
+    
+    return [], "알 수 없는 오류로 재무 데이터를 조회할 수 없습니다."
+
+
+def get_report_code_name(reprt_code: str) -> str:
+    """
+    보고서 코드에 해당하는 보고서 이름을 반환하는 함수
+    
+    Args:
+        reprt_code: 보고서 코드
+        
+    Returns:
+        보고서 이름
+    """
+    code_to_name = {
+        "11011": "사업보고서",
+        "11012": "반기보고서",
+        "11013": "1분기보고서",
+        "11014": "3분기보고서"
+    }
+    
+    return code_to_name.get(reprt_code, "알 수 없는 보고서")
+
+
+def get_statement_name(sj_div: str) -> str:
+    """
+    재무제표 구분 코드에 해당하는 재무제표 이름을 반환하는 함수
+    
+    Args:
+        sj_div: 재무제표 구분 코드
+        
+    Returns:
+        재무제표 이름
+    """
+    div_to_name = {
+        "BS": "재무상태표",
+        "IS": "손익계산서",
+        "CIS": "포괄손익계산서",
+        "CF": "현금흐름표",
+        "SCE": "자본변동표"
+    }
+    
+    return div_to_name.get(sj_div, "알 수 없는 재무제표")
+
+
+@mcp.tool()
+async def search_json_financial_data(
+    company_name: str,
+    bsns_year: str,
+    ctx: Context,
+    reprt_code: Optional[str] = "11011",
+    fs_div: Optional[str] = "OFS",
+    statement_type: Optional[str] = None
+) -> str:
+    """
+    회사의 재무정보를 JSON API를 통해 직접 가져오는 도구.
+    XBRL 파싱을 통한 재무정보 추출(search_detailed_financial_data)이 실패했을 때 대안으로 사용할 수 있는 도구입니다.
+    
+    Args:
+        company_name: 회사명 (예: 삼성전자, 네이버 등)
+        bsns_year: 사업연도 (4자리, 예: "2023")
+        ctx: MCP Context 객체
+        reprt_code: 보고서 코드 ("11011": 사업보고서, "11012": 반기보고서, "11013": 1분기보고서, "11014": 3분기보고서)
+        fs_div: 개별/연결구분 ("OFS": 재무제표, "CFS": 연결재무제표)
+        statement_type: 재무제표 유형 ("BS": 재무상태표, "IS": 손익계산서, "CIS": 포괄손익계산서, "CF": 현금흐름표, "SCE": 자본변동표)
+                       None인 경우 모든 유형의 재무제표 정보를 반환합니다.
+        
+    Returns:
+        선택한 재무제표 유형(들)의 세부 항목 정보가 포함된 텍스트 (당기 데이터만 표시)
+    """
+    # 결과 문자열 초기화
+    result = ""
+    api_errors = []
+    
+    try:
+        # 보고서 코드 검증
+        valid_report_codes = {"11011", "11012", "11013", "11014"}
+        if reprt_code not in valid_report_codes:
+            return f"지원하지 않는 보고서 코드입니다. 지원되는 코드: {', '.join(valid_report_codes)} (11011: 사업보고서, 11012: 반기보고서, 11013: 1분기보고서, 11014: 3분기보고서)"
+        
+        # 개별/연결 구분 검증
+        valid_fs_divs = {"OFS", "CFS"}
+        if fs_div not in valid_fs_divs:
+            return f"지원하지 않는 개별/연결 구분입니다. 지원되는 구분: {', '.join(valid_fs_divs)} (OFS: 재무제표, CFS: 연결재무제표)"
+        
+        # 재무제표 유형 검증
+        valid_statement_types = {"BS", "IS", "CIS", "CF", "SCE"}
+        if statement_type is not None and statement_type not in valid_statement_types:
+            return f"지원하지 않는 재무제표 유형입니다. 지원되는 유형: {', '.join(valid_statement_types)} (BS: 재무상태표, IS: 손익계산서, CIS: 포괄손익계산서, CF: 현금흐름표, SCE: 자본변동표)"
+        
+        # 진행상황 알림
+        report_name = get_report_code_name(reprt_code)
+        fs_div_name = "개별재무제표" if fs_div == "OFS" else "연결재무제표"
+        
+        if statement_type is None:
+            ctx.info(f"{company_name}의 {bsns_year}년 {report_name} {fs_div_name} 전체 재무정보를 검색합니다.")
+        else:
+            statement_name = get_statement_name(statement_type)
+            ctx.info(f"{company_name}의 {bsns_year}년 {report_name} {fs_div_name} 중 {statement_name} 정보를 검색합니다.")
+        
+        # 회사 코드 조회
+        corp_code, matched_name = await get_corp_code_by_name(company_name)
+        if not corp_code:
+            return f"회사 검색 오류: {matched_name}"
+        
+        ctx.info(f"{matched_name}(고유번호: {corp_code})의 재무정보를 검색합니다.")
+        
+        # JSON API를 통해 재무 데이터 조회
+        financial_data, error_msg = await get_financial_json(corp_code, bsns_year, reprt_code, fs_div)
+        
+        if error_msg:
+            return f"재무 데이터 조회 오류: {error_msg}"
+            
+        if not financial_data:
+            return f"{matched_name}의 {bsns_year}년 {report_name} {fs_div_name} 정보가 없습니다."
+        
+        # 결과 문자열 초기화
+        result = f"# {matched_name}의 {bsns_year}년 {report_name} {fs_div_name} 정보 (당기 데이터만 표시)\n\n"
+        
+        # 재무제표 유형별 데이터 분류
+        statement_data = {}
+        for item in financial_data:
+            sj_div = item.get('sj_div', '')
+            if sj_div not in statement_data:
+                statement_data[sj_div] = []
+            statement_data[sj_div].append(item)
+        
+        # 각 재무제표 유형 처리
+        if statement_type is None:
+            # 모든 재무제표 유형 처리
+            for sj_div, data in statement_data.items():
+                if not data:
+                    continue
+                
+                statement_name = get_statement_name(sj_div)
+                result += f"## {statement_name}\n\n"
+                
+                # 테이블 형식으로 데이터 출력 (당기 데이터만)
+                result += f"| 계정명 | 당기 ({data[0].get('thstrm_nm', '당기')}) |\n"
+                result += "|---|---|\n"
+                
+                # 데이터 행 추가 (당기 데이터만)
+                for item in data:
+                    account_nm = item.get('account_nm', '')
+                    thstrm_amount = item.get('thstrm_amount', '')
+                    
+                    # 3분기나 1분기, 반기 보고서이면서 손익계산서인 경우 당기 누적금액도 고려
+                    if reprt_code in ["11012", "11013", "11014"] and sj_div in ["IS", "CIS"]:
+                        thstrm_amount = item.get('thstrm_add_amount', thstrm_amount) or thstrm_amount
+                    
+                    result += f"| {account_nm} | {thstrm_amount} |\n"
+                
+                result += "\n"
+        else:
+            # 특정 재무제표 유형만 처리
+            data = statement_data.get(statement_type, [])
+            if not data:
+                result += f"선택한 재무제표 유형({get_statement_name(statement_type)})의 데이터가 없습니다.\n\n"
+            else:
+                statement_name = get_statement_name(statement_type)
+                result += f"## {statement_name}\n\n"
+                
+                # 테이블 형식으로 데이터 출력 (당기 데이터만)
+                result += f"| 계정명 | 당기 ({data[0].get('thstrm_nm', '당기')}) |\n"
+                result += "|---|---|\n"
+                
+                # 데이터 행 추가 (당기 데이터만)
+                for item in data:
+                    account_nm = item.get('account_nm', '')
+                    thstrm_amount = item.get('thstrm_amount', '')
+                    
+                    # 3분기나 1분기, 반기 보고서이면서 손익계산서인 경우 당기 누적금액도 고려
+                    if reprt_code in ["11012", "11013", "11014"] and statement_type in ["IS", "CIS"]:
+                        thstrm_amount = item.get('thstrm_add_amount', thstrm_amount) or thstrm_amount
+                    
+                    result += f"| {account_nm} | {thstrm_amount} |\n"
+        
+        # 최종 결과 메시지 추가
+        result += "\n## 참고사항\n"
+        result += "- 금액 단위: 원\n"
+        result += f"- 데이터 출처: DART 오픈API - 단일회사 전체 재무제표\n"
+        result += f"- 회사명: {matched_name} (고유번호: {corp_code})\n"
+        result += f"- 사업연도: {bsns_year}년\n"
+        result += f"- 보고서: {report_name}\n"
+        result += f"- 재무제표 구분: {fs_div_name}\n"
+        result += "- 표시 정보: 당기 데이터만 표시됨 (전기/전전기 데이터는 제외됨)\n"
+        
+    except Exception as e:
+        return f"재무 정보 검색 중 예상치 못한 오류가 발생했습니다: {str(e)}\n\n{traceback.format_exc()}"
+    
+    result += chat_guideline
+    return result.strip()
+
+
 # 서버 실행 코드
 if __name__ == "__main__":
     mcp.run(transport='stdio')
