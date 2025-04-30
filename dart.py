@@ -586,9 +586,9 @@ def extract_business_section(document_text: str, section_type: str) -> str:
         '주요 제품 및 서비스': r'<TITLE[^>]*>(?:\d+\.\s*)?주요\s*제품[^<]*</TITLE>(.*?)(?=<TITLE|</SECTION)',
         '원재료 및 생산설비': r'<TITLE[^>]*>(?:\d+\.\s*)?원재료[^<]*</TITLE>(.*?)(?=<TITLE|</SECTION)',
         '매출 및 수주상황': r'<TITLE[^>]*>(?:\d+\.\s*)?매출[^<]*</TITLE>(.*?)(?=<TITLE|</SECTION)',
-        '위험관리 및 파생거래': r'<TITLE[^>]*>(?:\d+\.\s*)?위험관리[^<]*</TITLE>(.*?)(?=<TITLE|</SECTION>',
+        '위험관리 및 파생거래': r'<TITLE[^>]*>(?:\d+\.\s*)?위험관리[^<]*</TITLE>(.*?)(?=<TITLE|</SECTION)',
         '주요계약 및 연구개발활동': r'<TITLE[^>]*>(?:\d+\.\s*)?주요\s*계약[^<]*</TITLE>(.*?)(?=<TITLE|</SECTION)',
-        '기타 참고사항': r'<TITLE[^>]*>(?:\d+\.\s*)?기타\s*참고사항[^<]*</TITLE>(.*?)(?=<TITLE|</SECTION>',
+        '기타 참고사항': r'<TITLE[^>]*>(?:\d+\.\s*)?기타\s*참고사항[^<]*</TITLE>(.*?)(?=<TITLE|</SECTION)',
     }
     
     # 요청된 섹션 패턴 확인
