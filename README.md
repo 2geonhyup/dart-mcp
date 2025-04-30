@@ -1,6 +1,6 @@
 # DART-MCP: 재무 분석을 위한 Claude 확장 프로그램
 
-DART API를 활용한 재무 분석 MCP(Model-assisted Capability Package)입니다. Claude를 이용하여 상장 기업의 재무 데이터를 쉽게 분석하고 시각화할 수 있습니다.
+DART API를 활용한 재무 분석 MCP(Model Context Protocol)입니다. Claude를 이용하여 상장 기업의 재무 데이터를 쉽게 분석하고 시각화할 수 있습니다.
 
 ## 가능한 것 / 불가능한 것
 
