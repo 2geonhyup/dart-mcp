@@ -47,7 +47,7 @@ DART API를 활용한 재무 분석 MCP(Model Context Protocol)입니다. Claude
 5. [인증키 신청/관리] - [오픈API 이용현황] 메뉴에서 발급된 인증키 확인
 
 ### Claude 데스크톱 앱 설치
-1. [Claude 데스크톱 앱](https://claude.ai/desktop) 다운로드 
+1. [Claude 데스크톱 앱](https://claude.ai/download) 다운로드 
 2. 계정 가입 및 로그인
 
 ## 설치 방법
