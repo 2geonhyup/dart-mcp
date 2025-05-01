@@ -749,6 +749,7 @@ async def search_disclosure(
 ) -> str:
     """
     회사의 주요 재무 정보를 검색하여 제공하는 도구.
+    2023년 9월 이후 자료에 활용. 이전 자료가 섞여있다면 search_json_financial_data로 보완.
     requested_items가 주어지면 해당 항목 관련 데이터가 있는 공시만 필터링합니다.
     
     Args:
