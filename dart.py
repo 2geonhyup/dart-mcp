@@ -137,9 +137,7 @@ async def get_corp_code_by_name(corp_name: str) -> Tuple[str, str]:
     url = f"{BASE_URL}/corpCode.xml?crtfc_key={API_KEY}"
     
     try:
-        # 타임아웃 명시적 설정 - 전체 요청에 대한 타임아웃
-        timeout = httpx.Timeout(10.0, connect=5.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(url)
                 
@@ -256,7 +254,7 @@ async def get_financial_statement_xbrl(rcept_no: str, reprt_code: str) -> str:
     url = f"{BASE_URL}/fnlttXbrl.xml?crtfc_key={API_KEY}&rcept_no={rcept_no}&reprt_code={reprt_code}"
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient() as client:
             response = await client.get(url)
 
             if response.status_code != 200:
@@ -676,7 +674,7 @@ async def get_original_document(rcept_no: str) -> Tuple[str, Optional[bytes]]:
     url = f"{BASE_URL}/document.xml?crtfc_key={API_KEY}&rcept_no={rcept_no}"
     
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient() as client:
             response = await client.get(url)
             
             if response.status_code != 200:
