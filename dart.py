@@ -942,6 +942,8 @@ async def search_detailed_financial_data(
 ) -> str:
     """
     회사의 세부적인 재무 정보를 제공하는 도구.
+    XBRL 파일을 파싱하여 상세한 재무 데이터를 추출합니다.
+    2023년 9월 이후 자료 분석에 사용합니다.
     
     Args:
         company_name: 회사명 (예: 삼성전자, 네이버 등)
@@ -1377,8 +1379,8 @@ async def search_json_financial_data(
     statement_type: Optional[str] = None
 ) -> str:
     """
-    회사의 재무정보를 JSON API를 통해 직접 가져오는 도구.
-    XBRL 파싱을 통한 재무정보 추출(search_detailed_financial_data)이 실패했을 때 대안으로 사용할 수 있는 도구입니다.
+    search_disclosure혹은 search_detailed_financial_data이 2023년 9월 이전 자료 분석에 실패했을 때 대안으로 활용
+    회사의 재무 정보를 JSON API를 통해 제공하는 도구. 2023년 9월 이전 자료 분석에 사용합니다.
     
     Args:
         company_name: 회사명 (예: 삼성전자, 네이버 등)
