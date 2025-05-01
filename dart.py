@@ -214,7 +214,9 @@ async def get_disclosure_list(corp_code: str, start_date: str, end_date: str) ->
     url = f"{BASE_URL}/list.json?crtfc_key={API_KEY}&corp_code={corp_code}&bgn_de={start_date}&end_de={end_date}&pblntf_ty=A&page_count=100"
     
     try:
-        async with httpx.AsyncClient() as client:
+         # 타임아웃 명시적 설정 - 전체 요청에 대한 타임아웃
+        timeout = httpx.Timeout(10.0, connect=5.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             try:
                 response = await client.get(url)
                 
