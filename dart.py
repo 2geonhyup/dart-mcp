@@ -749,7 +749,6 @@ async def search_disclosure(
 ) -> str:
     """
     회사의 주요 재무 정보를 검색하여 제공하는 도구.
-    2023년 9월 이후 자료에 활용. 이전 자료가 섞여있다면 search_json_financial_data로 보완.
     requested_items가 주어지면 해당 항목 관련 데이터가 있는 공시만 필터링합니다.
     
     Args:
@@ -944,7 +943,6 @@ async def search_detailed_financial_data(
     """
     회사의 세부적인 재무 정보를 제공하는 도구.
     XBRL 파일을 파싱하여 상세한 재무 데이터를 추출합니다.
-    2023년 9월 이후 자료 분석에 사용합니다.
     
     Args:
         company_name: 회사명 (예: 삼성전자, 네이버 등)
@@ -1380,8 +1378,8 @@ async def search_json_financial_data(
     statement_type: Optional[str] = None
 ) -> str:
     """
-    search_disclosure혹은 search_detailed_financial_data이 2023년 9월 이전 자료 분석에 실패했을 때 대안으로 활용
-    회사의 재무 정보를 JSON API를 통해 제공하는 도구. 2023년 9월 이전 자료 분석에 사용합니다.
+    회사의 재무 정보를 JSON API를 통해 제공하는 실패시 보완하는 보조 도구.
+    search_disclosure, search_detailed_financial_data이 2023년 9월 이전 자료 분석에 실패했을 때 대안으로 활용.
     
     Args:
         company_name: 회사명 (예: 삼성전자, 네이버 등)
