@@ -4,6 +4,10 @@ DART API를 활용한 재무 분석 MCP(Model-assisted Capability Package)입니
 
 상단에 더 상세하고 쉬운 가이드는 [https://dart-mcp.vercel.app/](https://dart-mcp.vercel.app/) 에서 보는 걸 추가드립니다.
 
+<a href="https://glama.ai/mcp/servers/@2geonhyup/dart-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@2geonhyup/dart-mcp/badge" alt="dart-mcp MCP server" />
+</a>
+
 ## 가능한 것 / 불가능한 것
 
 ### 가능한 것 (O)
@@ -100,4 +104,4 @@ https://github.com/2geonhyup/dart-mcp
 ## 사용시 주의사항
 - 기업명은 공식적으로 상장된 이름으로 제공해야 합니다.
 - 코스피, 코스닥 종목만 조사 가능합니다.
-- 주가나 시가총액과 같은 실시간 정보들은 앞으로 연동할 계획입니다. 
+- 주가나 시가총액과 같은 실시간 정보들은 앞으로 연동할 계획입니다.
