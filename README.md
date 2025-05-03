@@ -1,6 +1,6 @@
 # DART-MCP: 재무 분석을 위한 Claude 확장 프로그램
 
-DART API를 활용한 재무 분석 MCP(Model-assisted Capability Package)입니다. Claude를 이용하여 상장 기업의 재무 데이터를 쉽게 분석하고 시각화할 수 있습니다.
+DART API를 활용한 재무 분석 MCP(Model Context Protocol)입니다. Claude를 이용하여 상장 기업의 재무 데이터를 쉽게 분석하고 시각화할 수 있습니다.
 
 상단에 더 상세하고 쉬운 가이드는 [https://dart-mcp.vercel.app/](https://dart-mcp.vercel.app/) 에서 보는 걸 추가드립니다.
 
@@ -53,7 +53,7 @@ DART API를 활용한 재무 분석 MCP(Model-assisted Capability Package)입니
 5. [인증키 신청/관리] - [오픈API 이용현황] 메뉴에서 발급된 인증키 확인
 
 ### Claude 데스크톱 앱 설치
-1. [Claude 데스크톱 앱](https://claude.ai/desktop) 다운로드 
+1. [Claude 데스크톱 앱](https://claude.ai/download) 다운로드 
 2. 계정 가입 및 로그인
 
 ## 설치 방법
